@@ -8,6 +8,7 @@ keywords = ["adr", "architecture", "documentation", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 repository = "https://github.com/manuelmauro/arkouda"
 homepage = "https://github.com/manuelmauro/arkouda"
+readme = "README.md"
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
