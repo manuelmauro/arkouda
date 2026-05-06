@@ -6,7 +6,7 @@ license: MIT
 
 # Arkouda
 
-Use this skill when working in a repository that stores Architecture Decision Records (ADRs) as Markdown files with YAML frontmatter, and the `arkouda` CLI is available. The tool reads, searches, validates, and scaffolds those records.
+Use this skill when working in a repository that stores Architecture Decision Records (ADRs) as Markdown files with YAML frontmatter, and the `arkouda` CLI is available. The tool reads, validates, and scaffolds those records, and resolves an id to a section. For content search, lean on `rg`/`grep` — arkouda does not reinvent that.
 
 ## When to use
 
@@ -23,15 +23,16 @@ Default directory: `docs/adr/`. Override with `--dir <path>` on any command, or 
 
 ## Commands
 
-Run `arkouda --help` and `arkouda <subcommand> --help` to see the authoritative CLI surface. The five subcommands:
+Run `arkouda --help` and `arkouda <subcommand> --help` to see the authoritative CLI surface. The four subcommands:
 
 - **`arkouda list [--sort id|date|status] [--section <name>]`** — print a table of every ADR in the directory. With `--section <name>` (e.g. `decision`, `context`, `consequences`, `status`), print a Markdown digest of that section across all ADRs instead, skipping any that lack it. Use the default to orient; use `--section decision` to scan everything that's been decided.
 - **`arkouda show <id> [--section <name>]`** — print one ADR's full Markdown to stdout. `<id>` accepts the frontmatter id, the filename stem, or the filename. With `--section <name>`, print only that section's body; errors if the ADR has no such section.
-- **`arkouda search <query>`** — case-insensitive substring match across id, title, abstract, status, date, tags, and body. Use to answer "have we discussed X?".
 - **`arkouda check`** — validate every ADR's frontmatter, filename, and required Markdown sections. Exit code 0 if clean, 1 if any errors. Each error has a code (E000–E010) and a fix hint.
 - **`arkouda new "<title>" [--id <slug>] [--status proposed|accepted|superseded|deprecated|rejected] [--abstract "<one-line summary>"]`** — scaffold a new ADR with the standard template and today's date. The id defaults to a slug derived from the title.
 
 Global flags: `--dir <path>` (also `ADR_DIR`), `-q/--quiet`.
+
+Arkouda intentionally has no `search` subcommand. Use `rg <query> docs/adr/` (or `grep -ri`) for content search, and pipe arkouda's structured output through `awk`/`jq`/etc. when you need to combine queries. See ADR `defer-to-unix-tools` for the rationale.
 
 ## ADR shape (what `check` enforces)
 
@@ -81,8 +82,10 @@ arkouda check          # surface any drift before reading further
 **Answer "did we ever decide on X?"**
 
 ```sh
-arkouda search X
-arkouda show <id>      # for any hits
+rg -i X docs/adr/                  # find files containing X
+arkouda show <id>                  # read the hits
+arkouda list --section decision \
+  | rg -i X                        # search just inside Decision sections
 ```
 
 **Skim every decision (or context, consequences, …) at once**

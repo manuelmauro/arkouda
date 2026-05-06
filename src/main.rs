@@ -20,7 +20,6 @@ fn run(cli: &Cli) -> Result<ExitCode> {
     match &cli.command {
         Command::List(args) => commands::list::run(args, cli),
         Command::Show(args) => commands::show::run(args, cli),
-        Command::Search(args) => commands::search::run(args, cli),
         Command::Check => commands::check::run(cli),
         Command::New(args) => commands::new::run(args, cli),
     }

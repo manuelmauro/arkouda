@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 pub mod check;
 pub mod list;
 pub mod new;
-pub mod search;
 pub mod show;
 
 pub(crate) fn discover_paths(dir: &Path) -> Result<Vec<PathBuf>> {

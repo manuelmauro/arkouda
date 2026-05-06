@@ -32,9 +32,6 @@ pub enum Command {
     /// Show one ADR by id or filename.
     Show(ShowArgs),
 
-    /// Search ADR metadata and Markdown content.
-    Search(SearchArgs),
-
     /// Validate ADR frontmatter, filenames, and Markdown structure.
     Check,
 
@@ -67,13 +64,6 @@ pub struct ShowArgs {
     /// `status`.
     #[arg(long)]
     pub section: Option<String>,
-}
-
-/// Arguments for the `search` command.
-#[derive(clap::Args)]
-pub struct SearchArgs {
-    /// Case-insensitive search query.
-    pub query: String,
 }
 
 /// Arguments for the `new` command.
