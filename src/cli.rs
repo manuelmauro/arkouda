@@ -45,12 +45,6 @@ pub struct ListArgs {
     /// Sort ADRs by this field.
     #[arg(long, default_value = "id", value_enum)]
     pub sort: SortBy,
-
-    /// Print a digest of this `## <name>` section from each ADR instead of the
-    /// table view. Skips ADRs that lack the section. Common values:
-    /// `decision`, `context`, `consequences`, `status`.
-    #[arg(long)]
-    pub section: Option<String>,
 }
 
 /// Arguments for the `show` command.

@@ -23,14 +23,16 @@ make install
 ## Quick Start
 
 ```bash
-arkouda list                         # table of every ADR in docs/adr/
+arkouda list                         # table: id, status, date, path, title
 arkouda check                        # validate frontmatter + Markdown structure
 arkouda new "Use Postgres"           # scaffold docs/adr/use-postgres.md
 arkouda show use-postgres            # print the full ADR
 arkouda show use-postgres \
   --section decision                 # print just one section's body
-arkouda list --section decision      # Markdown digest of every Decision section
 rg postgres docs/adr/                # content search — use rg/grep, not arkouda
+
+# Pipe-friendly: list emits paths, shell takes it from there
+arkouda list | awk 'NR>1 && $2=="proposed" {print $4}' | xargs cat
 ```
 
 Run `arkouda --help` and `arkouda <subcommand> --help` for the full surface.
@@ -39,7 +41,7 @@ Run `arkouda --help` and `arkouda <subcommand> --help` for the full surface.
 
 | Command   | Description                                                                |
 | --------- | -------------------------------------------------------------------------- |
-| `list`    | Print a table of ADRs, or a Markdown digest with `--section <name>`        |
+| `list`    | Print a table of ADRs (id, status, date, path, title)                      |
 | `show`    | Print one ADR by id, or only its `--section <name>` body                   |
 | `check`   | Validate every ADR's frontmatter, filename, and required Markdown sections |
 | `new`     | Scaffold a new ADR from the standard template                              |

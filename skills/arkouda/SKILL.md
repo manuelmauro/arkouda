@@ -25,7 +25,7 @@ Default directory: `docs/adr/`. Override with `--dir <path>` on any command, or 
 
 Run `arkouda --help` and `arkouda <subcommand> --help` to see the authoritative CLI surface. The four subcommands:
 
-- **`arkouda list [--sort id|date|status] [--section <name>]`** — print a table of every ADR in the directory. With `--section <name>` (e.g. `decision`, `context`, `consequences`, `status`), print a Markdown digest of that section across all ADRs instead, skipping any that lack it. Use the default to orient; use `--section decision` to scan everything that's been decided.
+- **`arkouda list [--sort id|date|status]`** — print a table of every ADR in the directory: `ID`, `STATUS`, `DATE`, `PATH`, `TITLE`. The `PATH` column is the actual file path, so you can pipe rows into `cat`/`rg`/`xargs` to compose your own queries (e.g. `arkouda list | awk 'NR>1 && $2=="accepted" {print $4}' | xargs cat`).
 - **`arkouda show <id> [--section <name>]`** — print one ADR's full Markdown to stdout. `<id>` accepts the frontmatter id, the filename stem, or the filename. With `--section <name>`, print only that section's body; errors if the ADR has no such section.
 - **`arkouda check`** — validate every ADR's frontmatter, filename, and required Markdown sections. Exit code 0 if clean, 1 if any errors. Each error has a code (E000–E010) and a fix hint.
 - **`arkouda new "<title>" [--id <slug>] [--status proposed|accepted|superseded|deprecated|rejected] [--abstract "<one-line summary>"]`** — scaffold a new ADR with the standard template and today's date. The id defaults to a slug derived from the title.
@@ -91,9 +91,13 @@ arkouda list --section decision \
 **Skim every decision (or context, consequences, …) at once**
 
 ```sh
-arkouda list --section decision
-arkouda list --section consequences --sort status
-arkouda show use-postgres --section decision    # just one ADR's section
+# Single ADR, single section — direct CLI support:
+arkouda show use-postgres --section decision
+
+# Across the collection, compose with the shell. arkouda list emits paths,
+# so the section extractor can be a small awk/sed/rg pipeline.
+arkouda list | awk 'NR>1 {print $4}' \
+  | while read f; do echo "## $(basename "$f" .md)"; arkouda show "$(basename "$f" .md)" --section decision; echo; done
 ```
 
 **Propose a new decision**
