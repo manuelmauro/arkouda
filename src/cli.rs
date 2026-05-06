@@ -74,7 +74,8 @@ pub struct NewArgs {
     #[arg(long, default_value = "proposed", value_enum)]
     pub status: AdrStatus,
 
-    /// ADR abstract. Defaults to a TODO placeholder.
+    /// One-line summary of the decision (what was decided, not just the
+    /// topic). Defaults to a TODO placeholder.
     #[arg(long = "abstract")]
     pub abstract_text: Option<String>,
 }

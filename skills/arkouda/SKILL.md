@@ -28,7 +28,7 @@ Run `arkouda --help` and `arkouda <subcommand> --help` to see the authoritative 
 - **`arkouda list [--sort id|date|status]`** — print a table of every ADR in the directory: `ID`, `STATUS`, `DATE`, `PATH`, `TITLE`. The `PATH` column is the actual file path, so you can pipe rows into `cat`/`rg`/`xargs` to compose your own queries (e.g. `arkouda list | awk 'NR>1 && $2=="accepted" {print $4}' | xargs cat`).
 - **`arkouda show <id> [--section <name>]`** — print one ADR's full Markdown to stdout. `<id>` accepts the frontmatter id, the filename stem, or the filename. With `--section <name>`, print only that section's body; errors if the ADR has no such section.
 - **`arkouda check`** — validate every ADR's frontmatter, filename, and required Markdown sections. Exit code 0 if clean, 1 if any errors. Each error has a code (E000–E010) and a fix hint.
-- **`arkouda new "<title>" [--id <slug>] [--status proposed|accepted|superseded|deprecated|rejected] [--abstract "<one-line summary>"]`** — scaffold a new ADR with the standard template and today's date. The id defaults to a slug derived from the title.
+- **`arkouda new "<title>" [--id <slug>] [--status proposed|accepted|superseded|deprecated|rejected] [--abstract "<one-line summary of the decision>"]`** — scaffold a new ADR with the standard template and today's date. The id defaults to a slug derived from the title. The abstract should summarize *what was decided*, not just the topic.
 
 Global flags: `--dir <path>` (also `ADR_DIR`), `-q/--quiet`.
 
@@ -42,7 +42,7 @@ Every file must start with YAML frontmatter delimited by `---`:
 ---
 id: "use-postgres"            # lowercase slug, must match filename stem
 title: "Use Postgres"
-abstract: "One-line summary."
+abstract: "One-line summary of the decision (what was decided)."
 status: "proposed"            # proposed | accepted | superseded | deprecated | rejected
 date: "2026-05-06"            # ISO YYYY-MM-DD, must be a real date
 deciders: []                  # optional

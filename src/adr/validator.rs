@@ -121,7 +121,8 @@ pub fn validate(manifest: &Manifest) -> ValidationResult {
         &mut result,
         "abstract",
         manifest.frontmatter.abstract_text.as_deref(),
-        "Add an `abstract` summarizing the decision in one or two sentences.",
+        "Add an `abstract` summarizing the decision itself (what was decided, \
+         not just the topic) in one or two sentences.",
     );
     check_required_field(
         &mut result,

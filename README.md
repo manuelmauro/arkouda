@@ -56,7 +56,7 @@ Global flags: `--dir <path>` (also `ADR_DIR`), `-q/--quiet`.
 ---
 id: "use-postgres"            # lowercase slug, must match filename stem
 title: "Use Postgres"
-abstract: "One-line summary."
+abstract: "One-line summary of the decision (what was decided)."
 status: "proposed"            # proposed | accepted | superseded | deprecated | rejected
 date: "2026-05-06"            # ISO YYYY-MM-DD, must be a real date
 deciders: []                  # optional
