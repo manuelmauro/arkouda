@@ -1,4 +1,4 @@
-.PHONY: setup clean fmt-check fmt clippy check build test adr-check ci help
+.PHONY: setup clean fmt-check fmt clippy check build test install adr-check ci help
 
 # Setup development environment
 setup:
@@ -33,6 +33,10 @@ build:
 # Run all tests
 test:
 	cargo test --all
+
+# Install the binary locally
+install:
+	cargo install --path .
 
 # Validate ADRs with arkouda
 adr-check:
