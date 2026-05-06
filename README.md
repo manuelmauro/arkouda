@@ -103,6 +103,10 @@ Required keys: `id`, `title`, `abstract`, `status`, `date`. Required body sectio
 
 `arkouda check` exits 0 on a clean collection, 1 on any error.
 
+## Acknowledgements
+
+The ADR body schema (`## Status`, `## Context`, `## Decision`, `## Consequences`) follows [Michael Nygard's template](https://github.com/joelparkerhenderson/architecture-decision-record/tree/main/locales/en/templates/decision-record-template-by-michael-nygard) — the de-facto standard for Architecture Decision Records. Arkouda layers structured frontmatter, a slug-based id scheme, and validation on top of that template.
+
 ## License
 
 MIT OR Apache-2.0

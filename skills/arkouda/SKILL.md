@@ -68,7 +68,7 @@ What we decided.
 What follows from the decision.
 ```
 
-Required keys: `id`, `title`, `abstract`, `status`, `date`. Required body sections (case-insensitive H2): `Status`, `Context`, `Decision`, `Consequences`. Filename stem must equal the frontmatter `id`.
+Required keys: `id`, `title`, `abstract`, `status`, `date`. Required body sections (case-insensitive H2): `Status`, `Context`, `Decision`, `Consequences` — these come from [Michael Nygard's ADR template](https://github.com/joelparkerhenderson/architecture-decision-record/tree/main/locales/en/templates/decision-record-template-by-michael-nygard). Filename stem must equal the frontmatter `id`.
 
 ## Common workflows
 

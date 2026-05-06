@@ -62,7 +62,7 @@ The validator will require:
 4. A unique slug-style `id` for each ADR.
 5. A filename stem matching the ADR `id`.
 6. A Markdown heading matching the ADR title or otherwise clearly identifying the ADR.
-7. Required body sections:
+7. Required body sections, taken directly from [Michael Nygard's template](https://github.com/joelparkerhenderson/architecture-decision-record/tree/main/locales/en/templates/decision-record-template-by-michael-nygard):
    - `Status`
    - `Context`
    - `Decision`
