@@ -1,0 +1,10 @@
+/target
+
+# Agent-specific folders
+/.claude/
+/.codex/
+/.cursor/
+/.pi/
+
+# OS
+.DS_Store
