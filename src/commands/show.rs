@@ -12,16 +12,29 @@ pub fn run(args: &ShowArgs, cli: &Cli) -> Result<ExitCode> {
         .filter(|manifest| super::matches_lookup(manifest, &args.id))
         .collect();
 
-    match matches.as_slice() {
-        [] => Err(ArkoudaError::AdrNotFound(args.id.clone())),
-        [manifest] => {
-            let content = std::fs::read_to_string(&manifest.path)?;
-            print!("{content}");
-            Ok(ExitCode::SUCCESS)
+    let manifest = match matches.as_slice() {
+        [] => return Err(ArkoudaError::AdrNotFound(args.id.clone())),
+        [manifest] => *manifest,
+        _ => {
+            return Err(ArkoudaError::AmbiguousAdr {
+                query: args.id.clone(),
+                count: matches.len(),
+            });
         }
-        _ => Err(ArkoudaError::AmbiguousAdr {
-            query: args.id.clone(),
-            count: matches.len(),
-        }),
+    };
+
+    if let Some(section) = args.section.as_deref() {
+        let body = manifest
+            .section(section)
+            .ok_or_else(|| ArkoudaError::SectionNotFound {
+                id: manifest.frontmatter.display_id().to_owned(),
+                section: section.to_owned(),
+            })?;
+        println!("{body}");
+    } else {
+        let content = std::fs::read_to_string(&manifest.path)?;
+        print!("{content}");
     }
+
+    Ok(ExitCode::SUCCESS)
 }

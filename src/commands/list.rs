@@ -9,8 +9,28 @@ use std::process::ExitCode;
 pub fn run(args: &ListArgs, cli: &Cli) -> Result<ExitCode> {
     let mut manifests = super::load_manifests(&cli.dir)?;
     sort_manifests(&mut manifests, args.sort);
-    print_manifest_rows(&manifests);
+    match args.section.as_deref() {
+        Some(section) => print_section_digest(&manifests, section),
+        None => print_manifest_rows(&manifests),
+    }
     Ok(ExitCode::SUCCESS)
+}
+
+fn print_section_digest(manifests: &[Manifest], section: &str) {
+    let mut first = true;
+    for manifest in manifests {
+        let Some(body) = manifest.section(section) else {
+            continue;
+        };
+        if !first {
+            println!();
+        }
+        first = false;
+
+        let id = manifest.frontmatter.display_id();
+        let title = manifest.frontmatter.display_title();
+        println!("## {id}: {title}\n\n{body}");
+    }
 }
 
 pub(crate) fn sort_manifests(manifests: &mut [Manifest], sort: SortBy) {

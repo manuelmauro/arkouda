@@ -25,8 +25,8 @@ Default directory: `docs/adr/`. Override with `--dir <path>` on any command, or 
 
 Run `arkouda --help` and `arkouda <subcommand> --help` to see the authoritative CLI surface. The five subcommands:
 
-- **`arkouda list [--sort id|date|status]`** — print a table of every ADR in the directory. Use this first when exploring an unfamiliar repo's decisions.
-- **`arkouda show <id>`** — print one ADR's full Markdown to stdout. `<id>` accepts the frontmatter id, the filename stem, or the filename. Errors if the lookup is ambiguous.
+- **`arkouda list [--sort id|date|status] [--section <name>]`** — print a table of every ADR in the directory. With `--section <name>` (e.g. `decision`, `context`, `consequences`, `status`), print a Markdown digest of that section across all ADRs instead, skipping any that lack it. Use the default to orient; use `--section decision` to scan everything that's been decided.
+- **`arkouda show <id> [--section <name>]`** — print one ADR's full Markdown to stdout. `<id>` accepts the frontmatter id, the filename stem, or the filename. With `--section <name>`, print only that section's body; errors if the ADR has no such section.
 - **`arkouda search <query>`** — case-insensitive substring match across id, title, abstract, status, date, tags, and body. Use to answer "have we discussed X?".
 - **`arkouda check`** — validate every ADR's frontmatter, filename, and required Markdown sections. Exit code 0 if clean, 1 if any errors. Each error has a code (E000–E010) and a fix hint.
 - **`arkouda new "<title>" [--id <slug>] [--status proposed|accepted|superseded|deprecated|rejected] [--abstract "<one-line summary>"]`** — scaffold a new ADR with the standard template and today's date. The id defaults to a slug derived from the title.
@@ -83,6 +83,14 @@ arkouda check          # surface any drift before reading further
 ```sh
 arkouda search X
 arkouda show <id>      # for any hits
+```
+
+**Skim every decision (or context, consequences, …) at once**
+
+```sh
+arkouda list --section decision
+arkouda list --section consequences --sort status
+arkouda show use-postgres --section decision    # just one ADR's section
 ```
 
 **Propose a new decision**

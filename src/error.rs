@@ -26,6 +26,15 @@ pub enum ArkoudaError {
         count: usize,
     },
 
+    /// A requested Markdown section was not present in the ADR.
+    #[error("ADR '{id}' has no `## {section}` section")]
+    SectionNotFound {
+        /// ADR id.
+        id: String,
+        /// Requested section name.
+        section: String,
+    },
+
     /// An ADR id is invalid.
     #[error(
         "Invalid ADR id '{0}': must be lowercase alphanumeric words separated by single hyphens"

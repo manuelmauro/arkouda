@@ -47,6 +47,28 @@ impl Manifest {
         Self::parse_content(path, &content)
     }
 
+    /// Return the body of a `## <name>` Markdown section, with surrounding
+    /// blank lines trimmed. Matching is case-insensitive and ignores trailing
+    /// `#` characters in the heading. Returns `None` if no such section exists.
+    pub fn section(&self, name: &str) -> Option<String> {
+        let target = name.trim().to_ascii_lowercase();
+        let mut lines = self.body.lines();
+
+        let found = lines.by_ref().any(|line| {
+            line.strip_prefix("## ")
+                .map(|heading| heading.trim().trim_end_matches('#').trim())
+                .is_some_and(|heading| heading.eq_ignore_ascii_case(&target))
+        });
+
+        if !found {
+            return None;
+        }
+
+        let body: Vec<&str> = lines.take_while(|line| !line.starts_with("## ")).collect();
+
+        Some(body.join("\n").trim().to_owned())
+    }
+
     /// Parse ADR content from a string.
     pub fn parse_content(path: &Path, content: &str) -> Result<Self, ManifestError> {
         let (frontmatter_raw, body, body_start_line) = split_content(content)?;
@@ -126,5 +148,43 @@ Proposed
         let content = "---\nid: nope\n# no closing marker";
         let result = Manifest::parse_content(Path::new("docs/adr/nope.md"), content);
         assert!(matches!(result, Err(ManifestError::UnclosedFrontmatter)));
+    }
+
+    #[test]
+    fn extracts_named_section() {
+        let content = "---
+id: x
+title: X
+abstract: x
+status: proposed
+date: 2026-05-06
+---
+
+# X
+
+## Status
+
+Proposed
+
+## Decision
+
+We will adopt X.
+
+It scales.
+
+## Consequences
+
+Faster.
+";
+        let manifest = Manifest::parse_content(Path::new("x.md"), content).expect("valid manifest");
+        assert_eq!(
+            manifest.section("decision").as_deref(),
+            Some("We will adopt X.\n\nIt scales.")
+        );
+        assert_eq!(
+            manifest.section("DECISION").as_deref(),
+            Some("We will adopt X.\n\nIt scales.")
+        );
+        assert_eq!(manifest.section("missing"), None);
     }
 }
