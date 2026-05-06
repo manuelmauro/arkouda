@@ -23,20 +23,16 @@ pub struct Frontmatter {
     pub date: Option<String>,
 
     /// People or groups involved in the decision.
-    pub deciders: Option<Vec<String>>,
+    pub deciders: Vec<String>,
 
     /// Searchable tags.
-    pub tags: Option<Vec<String>>,
+    pub tags: Vec<String>,
 
     /// ADR id that supersedes this ADR, when relevant.
     pub superseded_by: Option<String>,
 }
 
 impl Frontmatter {
-    /// Required frontmatter keys for this project.
-    pub const REQUIRED_KEYS: &'static [&'static str] =
-        &["id", "title", "abstract", "status", "date"];
-
     /// Display id or a placeholder.
     pub fn display_id(&self) -> &str {
         self.id.as_deref().unwrap_or("<missing>")

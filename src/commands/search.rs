@@ -3,15 +3,16 @@
 use crate::adr::Manifest;
 use crate::cli::{Cli, SearchArgs};
 use crate::error::Result;
+use std::process::ExitCode;
 
 /// Run the search command.
-pub fn run(args: SearchArgs, cli: &Cli) -> Result<i32> {
+pub fn run(args: &SearchArgs, cli: &Cli) -> Result<ExitCode> {
     let manifests = super::load_manifests(&cli.dir)?;
     let query = args.query.to_ascii_lowercase();
-    let matches = manifests
+    let matches: Vec<Manifest> = manifests
         .into_iter()
         .filter(|manifest| searchable_text(manifest).contains(&query))
-        .collect::<Vec<_>>();
+        .collect();
 
     if matches.is_empty() {
         if !cli.quiet {
@@ -21,25 +22,30 @@ pub fn run(args: SearchArgs, cli: &Cli) -> Result<i32> {
         super::list::print_manifest_rows(&matches);
     }
 
-    Ok(0)
+    Ok(ExitCode::SUCCESS)
 }
 
 fn searchable_text(manifest: &Manifest) -> String {
     let frontmatter = &manifest.frontmatter;
-    let mut fields = [
-        frontmatter.id.as_deref().unwrap_or_default(),
-        frontmatter.title.as_deref().unwrap_or_default(),
-        frontmatter.abstract_text.as_deref().unwrap_or_default(),
-        frontmatter.status.as_deref().unwrap_or_default(),
-        frontmatter.date.as_deref().unwrap_or_default(),
-        &manifest.body,
+    let mut text = String::new();
+    for value in [
+        frontmatter.id.as_deref(),
+        frontmatter.title.as_deref(),
+        frontmatter.abstract_text.as_deref(),
+        frontmatter.status.as_deref(),
+        frontmatter.date.as_deref(),
     ]
-    .join("\n");
-
-    if let Some(tags) = &frontmatter.tags {
-        fields.push('\n');
-        fields.push_str(&tags.join("\n"));
+    .into_iter()
+    .flatten()
+    {
+        text.push_str(value);
+        text.push('\n');
     }
-
-    fields.to_ascii_lowercase()
+    for tag in &frontmatter.tags {
+        text.push_str(tag);
+        text.push('\n');
+    }
+    text.push_str(&manifest.body);
+    text.make_ascii_lowercase();
+    text
 }

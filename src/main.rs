@@ -2,25 +2,26 @@ use arkouda::cli::{Cli, Command};
 use arkouda::{Result, commands};
 use clap::Parser;
 use colored::Colorize;
+use std::process::ExitCode;
 
-fn main() {
+fn main() -> ExitCode {
     let cli = Cli::parse();
 
     match run(&cli) {
-        Ok(exit_code) => std::process::exit(exit_code),
+        Ok(code) => code,
         Err(error) => {
             eprintln!("{} {}", "error:".red().bold(), error);
-            std::process::exit(1);
+            ExitCode::FAILURE
         }
     }
 }
 
-fn run(cli: &Cli) -> Result<i32> {
+fn run(cli: &Cli) -> Result<ExitCode> {
     match &cli.command {
-        Command::List(args) => commands::list::run(args.clone(), cli),
-        Command::Show(args) => commands::show::run(args.clone(), cli),
-        Command::Search(args) => commands::search::run(args.clone(), cli),
-        Command::Check(args) => commands::check::run(args.clone(), cli),
-        Command::New(args) => commands::new::run(args.clone(), cli),
+        Command::List(args) => commands::list::run(args, cli),
+        Command::Show(args) => commands::show::run(args, cli),
+        Command::Search(args) => commands::search::run(args, cli),
+        Command::Check => commands::check::run(cli),
+        Command::New(args) => commands::new::run(args, cli),
     }
 }

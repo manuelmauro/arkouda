@@ -3,22 +3,41 @@
 use crate::adr::Manifest;
 use crate::cli::{Cli, ListArgs, SortBy};
 use crate::error::Result;
+use std::process::ExitCode;
 
 /// Run the list command.
-pub fn run(args: ListArgs, cli: &Cli) -> Result<i32> {
+pub fn run(args: &ListArgs, cli: &Cli) -> Result<ExitCode> {
     let mut manifests = super::load_manifests(&cli.dir)?;
     sort_manifests(&mut manifests, args.sort);
     print_manifest_rows(&manifests);
-    Ok(0)
+    Ok(ExitCode::SUCCESS)
 }
 
 pub(crate) fn sort_manifests(manifests: &mut [Manifest], sort: SortBy) {
     manifests.sort_by(|left, right| {
-        let left_key = sort_key(left, sort);
-        let right_key = sort_key(right, sort);
-        left_key
-            .cmp(&right_key)
-            .then_with(|| left.path.cmp(&right.path))
+        let primary = match sort {
+            SortBy::Id => left
+                .frontmatter
+                .display_id()
+                .cmp(right.frontmatter.display_id()),
+            SortBy::Date => (
+                left.frontmatter.display_date(),
+                left.frontmatter.display_id(),
+            )
+                .cmp(&(
+                    right.frontmatter.display_date(),
+                    right.frontmatter.display_id(),
+                )),
+            SortBy::Status => (
+                left.frontmatter.display_status(),
+                left.frontmatter.display_id(),
+            )
+                .cmp(&(
+                    right.frontmatter.display_status(),
+                    right.frontmatter.display_id(),
+                )),
+        };
+        primary.then_with(|| left.path.cmp(&right.path))
     });
 }
 
@@ -53,22 +72,6 @@ pub(crate) fn print_manifest_rows(manifests: &[Manifest]) {
             title,
             abstract_text,
         );
-    }
-}
-
-fn sort_key(manifest: &Manifest, sort: SortBy) -> String {
-    match sort {
-        SortBy::Id => manifest.frontmatter.display_id().to_string(),
-        SortBy::Date => format!(
-            "{}\u{0}{}",
-            manifest.frontmatter.display_date(),
-            manifest.frontmatter.display_id()
-        ),
-        SortBy::Status => format!(
-            "{}\u{0}{}",
-            manifest.frontmatter.display_status(),
-            manifest.frontmatter.display_id()
-        ),
     }
 }
 

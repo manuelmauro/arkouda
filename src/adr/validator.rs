@@ -1,17 +1,9 @@
 //! ADR validation.
 
-use crate::adr::{Manifest, is_valid_id};
+use crate::adr::{AdrStatus, Manifest, is_valid_id};
+use chrono::NaiveDate;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-
-/// Valid ADR status values.
-pub const VALID_STATUSES: &[&str] = &[
-    "proposed",
-    "accepted",
-    "superseded",
-    "deprecated",
-    "rejected",
-];
 
 /// Result of validating an ADR.
 #[derive(Debug, Default, Clone)]
@@ -23,13 +15,8 @@ pub struct ValidationResult {
 }
 
 impl ValidationResult {
-    /// Returns true if there are no errors.
-    pub fn is_ok(&self) -> bool {
-        self.errors.is_empty()
-    }
-
     /// Merge another result into this one.
-    pub fn merge(&mut self, other: ValidationResult) {
+    pub fn merge(&mut self, other: Self) {
         self.errors.extend(other.errors);
         self.warnings.extend(other.warnings);
     }
@@ -60,12 +47,14 @@ impl Diagnostic {
     }
 
     /// Set a line number.
+    #[must_use]
     pub fn with_line(mut self, line: usize) -> Self {
         self.line = Some(line);
         self
     }
 
     /// Set a fix hint.
+    #[must_use]
     pub fn with_hint(mut self, hint: impl Into<String>) -> Self {
         self.fix_hint = Some(hint.into());
         self
@@ -101,145 +90,133 @@ pub enum DiagnosticCode {
 
 impl fmt::Display for DiagnosticCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::E000 => write!(f, "E000"),
-            Self::E001 => write!(f, "E001"),
-            Self::E002 => write!(f, "E002"),
-            Self::E003 => write!(f, "E003"),
-            Self::E004 => write!(f, "E004"),
-            Self::E005 => write!(f, "E005"),
-            Self::E006 => write!(f, "E006"),
-            Self::E007 => write!(f, "E007"),
-            Self::E008 => write!(f, "E008"),
-            Self::E009 => write!(f, "E009"),
-            Self::E010 => write!(f, "E010"),
-        }
+        write!(f, "{self:?}")
     }
 }
 
-/// ADR validator.
-pub struct Validator;
+/// Validate a collection of parsed ADR manifests.
+pub fn validate_collection(manifests: &[Manifest]) -> Vec<ValidationResult> {
+    let mut results: Vec<ValidationResult> = manifests.iter().map(validate).collect();
+    check_duplicate_ids(manifests, &mut results);
+    results
+}
 
-impl Validator {
-    /// Validate a collection of parsed ADR manifests.
-    pub fn validate_collection(manifests: &[Manifest]) -> Vec<ValidationResult> {
-        let mut results: Vec<ValidationResult> = manifests.iter().map(Self::validate).collect();
-        Self::check_duplicate_ids(manifests, &mut results);
-        results
-    }
+/// Validate one parsed ADR manifest.
+pub fn validate(manifest: &Manifest) -> ValidationResult {
+    let mut result = ValidationResult::default();
 
-    /// Validate one parsed ADR manifest.
-    pub fn validate(manifest: &Manifest) -> ValidationResult {
-        let mut result = ValidationResult::default();
+    check_required_field(
+        &mut result,
+        "id",
+        manifest.frontmatter.id.as_deref(),
+        "Add `id: \"my-decision-slug\"` to the YAML frontmatter.",
+    );
+    check_required_field(
+        &mut result,
+        "title",
+        manifest.frontmatter.title.as_deref(),
+        "Add a human-readable `title` to the YAML frontmatter.",
+    );
+    check_required_field(
+        &mut result,
+        "abstract",
+        manifest.frontmatter.abstract_text.as_deref(),
+        "Add an `abstract` summarizing the decision in one or two sentences.",
+    );
+    check_required_field(
+        &mut result,
+        "status",
+        manifest.frontmatter.status.as_deref(),
+        "Add `status: \"proposed\"` or another valid status.",
+    );
+    check_required_field(
+        &mut result,
+        "date",
+        manifest.frontmatter.date.as_deref(),
+        "Add `date: \"YYYY-MM-DD\"` to the YAML frontmatter.",
+    );
 
-        check_required_field(
-            &mut result,
-            "id",
-            manifest.frontmatter.id.as_deref(),
-            "Add `id: \"my-decision-slug\"` to the YAML frontmatter.",
-        );
-        check_required_field(
-            &mut result,
-            "title",
-            manifest.frontmatter.title.as_deref(),
-            "Add a human-readable `title` to the YAML frontmatter.",
-        );
-        check_required_field(
-            &mut result,
-            "abstract",
-            manifest.frontmatter.abstract_text.as_deref(),
-            "Add an `abstract` summarizing the decision in one or two sentences.",
-        );
-        check_required_field(
-            &mut result,
-            "status",
-            manifest.frontmatter.status.as_deref(),
-            "Add `status: \"proposed\"` or another valid status.",
-        );
-        check_required_field(
-            &mut result,
-            "date",
-            manifest.frontmatter.date.as_deref(),
-            "Add `date: \"YYYY-MM-DD\"` to the YAML frontmatter.",
-        );
-
-        if let Some(id) = non_empty(manifest.frontmatter.id.as_deref()) {
-            if !is_valid_id(id) {
-                result.errors.push(
-                    Diagnostic::error(
-                        DiagnosticCode::E004,
-                        format!("ADR id `{id}` must be a lowercase slug"),
-                    )
-                    .with_hint("Use lowercase letters, numbers, and single hyphens only."),
-                );
-            }
-
-            if let Some(stem) = manifest.path.file_stem().and_then(|stem| stem.to_str())
-                && stem != id
-            {
-                result.errors.push(
-                    Diagnostic::error(
-                        DiagnosticCode::E005,
-                        format!("filename stem `{stem}` does not match ADR id `{id}`"),
-                    )
-                    .with_hint(format!("Rename this file to `{id}.md`.")),
-                );
-            }
-        }
-
-        if let Some(status) = non_empty(manifest.frontmatter.status.as_deref())
-            && !VALID_STATUSES.contains(&status)
-        {
+    if let Some(id) = non_empty(manifest.frontmatter.id.as_deref()) {
+        if !is_valid_id(id) {
             result.errors.push(
-                Diagnostic::error(DiagnosticCode::E003, format!("invalid status `{status}`"))
-                    .with_hint(format!("Use one of: {}.", VALID_STATUSES.join(", "))),
+                Diagnostic::error(
+                    DiagnosticCode::E004,
+                    format!("ADR id `{id}` must be a lowercase slug"),
+                )
+                .with_hint("Use lowercase letters, numbers, and single hyphens only."),
             );
         }
 
-        if let Some(date) = non_empty(manifest.frontmatter.date.as_deref())
-            && !is_valid_iso_date(date)
+        if let Some(stem) = manifest.path.file_stem().and_then(|stem| stem.to_str())
+            && stem != id
         {
             result.errors.push(
                 Diagnostic::error(
-                    DiagnosticCode::E006,
-                    format!("date `{date}` must be a valid YYYY-MM-DD date"),
+                    DiagnosticCode::E005,
+                    format!("filename stem `{stem}` does not match ADR id `{id}`"),
                 )
-                .with_hint("Use an ISO date such as `2026-05-06`."),
+                .with_hint(format!("Rename this file to `{id}.md`.")),
             );
         }
-
-        check_title_heading(manifest, &mut result);
-        check_required_sections(manifest, &mut result);
-
-        result
     }
 
-    fn check_duplicate_ids(manifests: &[Manifest], results: &mut [ValidationResult]) {
-        let mut id_to_indexes: HashMap<&str, Vec<usize>> = HashMap::new();
+    if let Some(status) = non_empty(manifest.frontmatter.status.as_deref())
+        && status.parse::<AdrStatus>().is_err()
+    {
+        let valid = AdrStatus::ALL
+            .iter()
+            .map(AdrStatus::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        result.errors.push(
+            Diagnostic::error(DiagnosticCode::E003, format!("invalid status `{status}`"))
+                .with_hint(format!("Use one of: {valid}.")),
+        );
+    }
 
-        for (index, manifest) in manifests.iter().enumerate() {
-            if let Some(id) = non_empty(manifest.frontmatter.id.as_deref()) {
-                id_to_indexes.entry(id).or_default().push(index);
-            }
+    if let Some(date) = non_empty(manifest.frontmatter.date.as_deref())
+        && NaiveDate::parse_from_str(date, "%Y-%m-%d").is_err()
+    {
+        result.errors.push(
+            Diagnostic::error(
+                DiagnosticCode::E006,
+                format!("date `{date}` must be a valid YYYY-MM-DD date"),
+            )
+            .with_hint("Use an ISO date such as `2026-05-06`."),
+        );
+    }
+
+    check_title_heading(manifest, &mut result);
+    check_required_sections(manifest, &mut result);
+
+    result
+}
+
+fn check_duplicate_ids(manifests: &[Manifest], results: &mut [ValidationResult]) {
+    let mut id_to_indexes: HashMap<&str, Vec<usize>> = HashMap::new();
+
+    for (index, manifest) in manifests.iter().enumerate() {
+        if let Some(id) = non_empty(manifest.frontmatter.id.as_deref()) {
+            id_to_indexes.entry(id).or_default().push(index);
+        }
+    }
+
+    for (id, indexes) in id_to_indexes {
+        if indexes.len() <= 1 {
+            continue;
         }
 
-        for (id, indexes) in id_to_indexes {
-            if indexes.len() <= 1 {
-                continue;
-            }
+        let paths = indexes
+            .iter()
+            .map(|index| manifests[*index].path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
 
-            let paths = indexes
-                .iter()
-                .map(|index| manifests[*index].path.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            for index in indexes {
-                results[index].errors.push(
-                    Diagnostic::error(DiagnosticCode::E010, format!("ADR id `{id}` is duplicated"))
-                        .with_hint(format!("Use unique ids. Also found in: {paths}")),
-                );
-            }
+        for index in indexes {
+            results[index].errors.push(
+                Diagnostic::error(DiagnosticCode::E010, format!("ADR id `{id}` is duplicated"))
+                    .with_hint(format!("Use unique ids. Also found in: {paths}")),
+            );
         }
     }
 }
@@ -270,9 +247,8 @@ fn check_required_field(
 }
 
 fn check_title_heading(manifest: &Manifest, result: &mut ValidationResult) {
-    let title = match non_empty(manifest.frontmatter.title.as_deref()) {
-        Some(title) => title,
-        None => return,
+    let Some(title) = non_empty(manifest.frontmatter.title.as_deref()) else {
+        return;
     };
 
     let h1 = manifest
@@ -281,24 +257,26 @@ fn check_title_heading(manifest: &Manifest, result: &mut ValidationResult) {
         .enumerate()
         .find_map(|(line_index, line)| {
             line.strip_prefix("# ")
-                .map(str::trim)
-                .map(|heading| (line_index, heading))
+                .map(|heading| (line_index, heading.trim()))
         });
 
-    match h1 {
-        None => result.errors.push(
+    let Some((line_index, heading)) = h1 else {
+        result.errors.push(
             Diagnostic::error(DiagnosticCode::E007, "missing top-level Markdown heading")
                 .with_hint(format!("Add `# {title}` after the frontmatter.")),
-        ),
-        Some((line_index, heading)) if heading != title => result.errors.push(
+        );
+        return;
+    };
+
+    if heading != title {
+        result.errors.push(
             Diagnostic::error(
                 DiagnosticCode::E008,
                 format!("top-level heading `{heading}` does not match title `{title}`"),
             )
             .with_line(manifest.body_start_line + line_index)
             .with_hint(format!("Change the heading to `# {title}`.")),
-        ),
-        Some(_) => {}
+        );
     }
 }
 
@@ -315,18 +293,13 @@ fn check_required_sections(manifest: &Manifest, result: &mut ValidationResult) {
 
     for required in ["status", "context", "decision", "consequences"] {
         if !sections.contains(required) {
+            let cased = title_case(required);
             result.errors.push(
                 Diagnostic::error(
                     DiagnosticCode::E009,
-                    format!(
-                        "missing required Markdown section `## {}`",
-                        title_case(required)
-                    ),
+                    format!("missing required Markdown section `## {cased}`"),
                 )
-                .with_hint(format!(
-                    "Add a `## {}` section to the ADR body.",
-                    title_case(required)
-                )),
+                .with_hint(format!("Add a `## {cased}` section to the ADR body.")),
             );
         }
     }
@@ -347,60 +320,15 @@ fn title_case(value: &str) -> String {
     }
 }
 
-fn is_valid_iso_date(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
-        return false;
-    }
-
-    if !bytes
-        .iter()
-        .enumerate()
-        .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
-    {
-        return false;
-    }
-
-    let Ok(year) = value[0..4].parse::<i32>() else {
-        return false;
-    };
-    let Ok(month) = value[5..7].parse::<u32>() else {
-        return false;
-    };
-    let Ok(day) = value[8..10].parse::<u32>() else {
-        return false;
-    };
-
-    if month == 0 || month > 12 || day == 0 {
-        return false;
-    }
-
-    day <= days_in_month(year, month)
-}
-
-fn days_in_month(year: i32, month: u32) -> u32 {
-    match month {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 if is_leap_year(year) => 29,
-        2 => 28,
-        _ => 0,
-    }
-}
-
-fn is_leap_year(year: i32) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::adr::Manifest;
-    use std::path::PathBuf;
+    use std::path::Path;
 
     #[test]
     fn validates_a_good_adr() {
-        let content = r#"---
+        let content = "---
 id: basic-adr-cli
 title: Basic ADR CLI
 abstract: Navigate ADRs
@@ -425,20 +353,11 @@ Decision.
 ## Consequences
 
 Consequences.
-"#;
-        let manifest = Manifest::parse_content(PathBuf::from("docs/adr/basic-adr-cli.md"), content)
+";
+        let manifest = Manifest::parse_content(Path::new("docs/adr/basic-adr-cli.md"), content)
             .expect("valid manifest");
-        let result = Validator::validate(&manifest);
+        let result = validate(&manifest);
 
         assert!(result.errors.is_empty(), "{:#?}", result.errors);
-    }
-
-    #[test]
-    fn rejects_invalid_dates() {
-        assert!(is_valid_iso_date("2026-05-06"));
-        assert!(is_valid_iso_date("2024-02-29"));
-        assert!(!is_valid_iso_date("2026-02-29"));
-        assert!(!is_valid_iso_date("2026-13-01"));
-        assert!(!is_valid_iso_date("06-05-2026"));
     }
 }

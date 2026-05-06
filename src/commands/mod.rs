@@ -1,8 +1,8 @@
 //! CLI command implementations.
 
-use crate::adr::{Discovery, Manifest};
+use crate::adr::{Manifest, discovery};
 use crate::error::{ArkoudaError, Result};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub mod check;
 pub mod list;
@@ -10,8 +10,8 @@ pub mod new;
 pub mod search;
 pub mod show;
 
-pub(crate) fn discover_paths(dir: &Path) -> Result<Vec<std::path::PathBuf>> {
-    let paths = Discovery::find_adrs(dir)?;
+pub(crate) fn discover_paths(dir: &Path) -> Result<Vec<PathBuf>> {
+    let paths = discovery::find_adrs(dir)?;
     if paths.is_empty() {
         return Err(ArkoudaError::NoAdrsFound {
             path: dir.display().to_string(),
@@ -24,7 +24,7 @@ pub(crate) fn load_manifests(dir: &Path) -> Result<Vec<Manifest>> {
     discover_paths(dir)?
         .into_iter()
         .map(|path| {
-            Manifest::parse(path.clone()).map_err(|source| ArkoudaError::Manifest {
+            Manifest::parse(&path).map_err(|source| ArkoudaError::Manifest {
                 path: path.display().to_string(),
                 source,
             })

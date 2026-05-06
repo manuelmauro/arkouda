@@ -1,7 +1,7 @@
 //! Command-line interface definitions.
 
+use crate::adr::AdrStatus;
 use clap::{Parser, Subcommand, ValueEnum};
-use std::fmt;
 use std::path::PathBuf;
 
 /// Main CLI application.
@@ -36,14 +36,14 @@ pub enum Command {
     Search(SearchArgs),
 
     /// Validate ADR frontmatter, filenames, and Markdown structure.
-    Check(CheckArgs),
+    Check,
 
     /// Create a new ADR from the standard template.
     New(NewArgs),
 }
 
 /// Arguments for the `list` command.
-#[derive(clap::Args, Clone)]
+#[derive(clap::Args)]
 pub struct ListArgs {
     /// Sort ADRs by this field.
     #[arg(long, default_value = "id", value_enum)]
@@ -51,25 +51,21 @@ pub struct ListArgs {
 }
 
 /// Arguments for the `show` command.
-#[derive(clap::Args, Clone)]
+#[derive(clap::Args)]
 pub struct ShowArgs {
     /// ADR id, filename stem, or filename.
     pub id: String,
 }
 
 /// Arguments for the `search` command.
-#[derive(clap::Args, Clone)]
+#[derive(clap::Args)]
 pub struct SearchArgs {
     /// Case-insensitive search query.
     pub query: String,
 }
 
-/// Arguments for the `check` command.
-#[derive(clap::Args, Clone)]
-pub struct CheckArgs {}
-
 /// Arguments for the `new` command.
-#[derive(clap::Args, Clone)]
+#[derive(clap::Args)]
 pub struct NewArgs {
     /// ADR title.
     pub title: String,
@@ -97,50 +93,4 @@ pub enum SortBy {
     Date,
     /// Sort by ADR status.
     Status,
-}
-
-/// Controlled ADR status values.
-#[derive(ValueEnum, Clone, Copy, Debug)]
-#[value(rename_all = "kebab-case")]
-pub enum AdrStatus {
-    /// Decision is proposed but not yet accepted.
-    Proposed,
-    /// Decision is accepted and active.
-    Accepted,
-    /// Decision has been superseded by another ADR.
-    Superseded,
-    /// Decision is no longer recommended.
-    Deprecated,
-    /// Decision was rejected.
-    Rejected,
-}
-
-impl AdrStatus {
-    /// Return the frontmatter representation for this status.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Proposed => "proposed",
-            Self::Accepted => "accepted",
-            Self::Superseded => "superseded",
-            Self::Deprecated => "deprecated",
-            Self::Rejected => "rejected",
-        }
-    }
-
-    /// Return the human-readable section value for this status.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Proposed => "Proposed",
-            Self::Accepted => "Accepted",
-            Self::Superseded => "Superseded",
-            Self::Deprecated => "Deprecated",
-            Self::Rejected => "Rejected",
-        }
-    }
-}
-
-impl fmt::Display for AdrStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
 }

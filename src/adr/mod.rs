@@ -6,12 +6,13 @@ use std::sync::OnceLock;
 pub mod discovery;
 pub mod frontmatter;
 pub mod manifest;
+pub mod status;
 pub mod validator;
 
-pub use discovery::Discovery;
 pub use frontmatter::Frontmatter;
 pub use manifest::Manifest;
-pub use validator::{Diagnostic, DiagnosticCode, ValidationResult, Validator};
+pub use status::AdrStatus;
+pub use validator::{Diagnostic, DiagnosticCode, ValidationResult};
 
 /// Return true when an ADR id is a lowercase slug.
 pub fn is_valid_id(id: &str) -> bool {
@@ -35,12 +36,10 @@ pub fn slugify(input: &str) -> String {
         }
     }
 
-    while slug.ends_with('-') {
-        slug.pop();
-    }
+    slug.truncate(slug.trim_end_matches('-').len());
 
     if slug.is_empty() {
-        "adr".to_string()
+        String::from("adr")
     } else {
         slug
     }
