@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-05-06
+
+### Changed
+
+- `arkouda list` now includes a `PATH` column so the table composes directly with shell tools (e.g. `arkouda list | awk 'NR>1 && $2=="accepted" {print $4}' | xargs cat`).
+
+### Removed
+
+- `arkouda list --section <name>` — the flag silently switched the command between a metadata table and a content digest. For a single section of a single ADR, `arkouda show <id> --section <name>` is unchanged. For collection-wide section extraction, compose with `awk`/`xargs`/`rg`.
+
+### Docs
+
+- Credit Michael Nygard's ADR template (the source of the `Status` / `Context` / `Decision` / `Consequences` body schema) in the README, the `basic-adr-cli` ADR, and the agent skill.
+
 ## [0.1.0] - 2026-05-06
 
 Initial release.
@@ -23,4 +37,5 @@ Initial release.
 - Dual MIT/Apache-2.0 license.
 - Agent skills: `skills/arkouda` (how to use the CLI) and `skills/prepare-release` (how to cut a release).
 
+[0.1.1]: https://github.com/manuelmauro/arkouda/releases/tag/v0.1.1
 [0.1.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.1.0
