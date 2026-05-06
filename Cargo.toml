@@ -2,6 +2,12 @@
 name = "arkouda"
 version = "0.1.0"
 edition = "2024"
+description = "CLI for navigating and validating Architecture Decision Records"
+license = "MIT OR Apache-2.0"
+keywords = ["adr", "architecture", "documentation", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+repository = "https://github.com/manuelmauro/arkouda"
+homepage = "https://github.com/manuelmauro/arkouda"
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
