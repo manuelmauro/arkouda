@@ -95,7 +95,7 @@ Required keys: `id`, `title`, `abstract`, `status`, `date`. Required body sectio
 
 ## Agent skill
 
-`skills/arkouda/SKILL.md` is a [skilo](https://github.com/manuelmauro/skilo)-validated agent skill that teaches an AI assistant when to reach for arkouda, the four subcommands, the schema, common workflows, and how to read the diagnostic codes.
+`skills/use-arkouda/SKILL.md` is a portable, [skilo](https://github.com/manuelmauro/skilo)-validated agent skill that teaches an AI assistant to consult prior decisions before making non-trivial choices, capture new decisions afterwards, and use the four subcommands, the schema, and the diagnostic codes correctly. It's repo-agnostic — drop it into any project that uses arkouda.
 
 ## CI integration
 

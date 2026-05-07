@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `arkouda list` now prints one ADR file path per line by default — no header, no padded columns. Pipe it straight into `xargs`/`rg`/`cat`/`wc`. Pass `-l` for the long-form `ID STATUS DATE PATH TITLE` table (still headerless).
 - Replaced `arkouda show <id>` with `arkouda decision <id>`. The new command prints the body of the `## Decision` section by default; pass `--section <name>` to pick another. Full-file display moves to the shell (`cat docs/adr/<id>.md`). See [`docs/adr/ls-style-list-and-decision.md`](docs/adr/ls-style-list-and-decision.md) for rationale.
+- Renamed the agent skill `skills/arkouda` → `skills/use-arkouda` and rewrote it to be repo-agnostic: it now triggers any time a non-trivial decision is being made, not just when the user explicitly mentions ADRs. Drop it into any project that uses arkouda.
 
 ### Removed
 

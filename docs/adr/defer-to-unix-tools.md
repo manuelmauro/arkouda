@@ -42,6 +42,6 @@ Concrete consequences for the surface:
 
 - The CLI surface stays small and focused. Each subcommand has a clear reason to exist that's hard to replicate with off-the-shelf tools.
 - Users compose arkouda with their existing shell habits — `arkouda list --section decision | rg postgres`, `arkouda show <id> | bat`, `ls docs/adr/ | wc -l`.
-- Discoverability of "how do I search ADRs?" shifts from `arkouda --help` to general shell knowledge. The agent skill at `skills/arkouda/SKILL.md` documents the recommended pipelines so agents reach for the right tool.
+- Discoverability of "how do I search ADRs?" shifts from `arkouda --help` to general shell knowledge. The agent skill at `skills/use-arkouda/SKILL.md` documents the recommended pipelines so agents reach for the right tool.
 - We accept that anyone expecting a built-in `search` will be briefly surprised. The `--help` output and skill doc point them at `rg`/`grep`.
 - If a future feature is on the boundary (e.g. "summarise all ADRs in last 30 days"), the default answer is "pipe `arkouda list` through `awk`/`jq`" before considering a new subcommand.
