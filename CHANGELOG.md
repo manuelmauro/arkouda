@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-07
+
 ### Added
 
 - `.arkoudarc.toml` config file with a `dirs = [...]` list of ADR directories, discovered by walking up from the working directory. Useful for monorepos that keep ADRs per service or area. Relative paths resolve against the config file's location, so the same file works from any subdirectory. `arkouda list`, `check`, and `decision` aggregate across all listed dirs; `arkouda new` writes into the first one (override with `--dir`). Precedence: `--dir` > `ADR_DIR` > `.arkoudarc.toml` > default `docs/adr`.
@@ -54,5 +56,6 @@ Initial release.
 - Dual MIT/Apache-2.0 license.
 - Agent skills: `skills/arkouda` (how to use the CLI) and `skills/prepare-release` (how to cut a release).
 
+[0.2.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.2.0
 [0.1.1]: https://github.com/manuelmauro/arkouda/releases/tag/v0.1.1
 [0.1.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.1.0
