@@ -3,9 +3,11 @@
 [![CI](https://github.com/manuelmauro/arkouda/actions/workflows/ci.yml/badge.svg)](https://github.com/manuelmauro/arkouda/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/arkouda.svg)](https://crates.io/crates/arkouda)
 
-A small CLI for navigating and validating Architecture Decision Records (ADRs).
+**AI-native CLI for Architecture Decision Records — built for AI coding agents.**
 
-Arkouda treats ADRs as plain Markdown files with YAML frontmatter. It parses the collection, validates the schema, scaffolds new entries, and pulls a named `## Section` out for you. Anything a one-line shell pipeline does well — content search, counting, slicing, full-file printing — is left to `rg`, `grep`, `awk`, `cat`, and friends. See [`docs/adr/defer-to-unix-tools.md`](docs/adr/defer-to-unix-tools.md) and [`docs/adr/ls-style-list-and-decision.md`](docs/adr/ls-style-list-and-decision.md) for the rationale.
+Arkouda ships a portable [agent skill](skills/use-arkouda/SKILL.md) that teaches AI assistants to check prior decisions before making non-trivial choices and capture new ones afterwards. Output is structured for piping, so agents compose ADRs with their existing shell toolkit (`rg`, `cat`, `awk`). The schema is strict and validation diagnostics carry machine-readable error codes (`E000`–`E010`) — easy for an agent to act on, easy for CI to gate on.
+
+Under the hood arkouda treats ADRs as plain Markdown files with YAML frontmatter: it parses the collection, validates the schema, scaffolds new entries, and pulls a named `## Section` out for you. Anything a one-line shell pipeline does well — content search, counting, slicing, full-file printing — is left to `rg`, `grep`, `awk`, `cat`, and friends. See [`docs/adr/defer-to-unix-tools.md`](docs/adr/defer-to-unix-tools.md) and [`docs/adr/ls-style-list-and-decision.md`](docs/adr/ls-style-list-and-decision.md) for the rationale.
 
 ## Installation
 
@@ -109,7 +111,13 @@ Relative paths resolve against the location of the config file, so the same file
 
 ## Agent skill
 
-`skills/use-arkouda/SKILL.md` is a portable, [skilo](https://github.com/manuelmauro/skilo)-validated agent skill that teaches an AI assistant to consult prior decisions before making non-trivial choices, capture new decisions afterwards, and use the four subcommands, the schema, and the diagnostic codes correctly. It's repo-agnostic — drop it into any project that uses arkouda.
+[`skills/use-arkouda/SKILL.md`](skills/use-arkouda/SKILL.md) is a portable, [skilo](https://github.com/manuelmauro/skilo)-validated agent skill — drop it into any project that uses arkouda. It teaches an AI coding agent to:
+
+- **Before deciding** — search prior ADRs (`arkouda list | xargs rg -i <topic>`) so the agent doesn't redo a debate that's already in the file, or unknowingly undo a deliberate decision.
+- **After deciding** — capture the outcome with `arkouda new "<title>" --abstract "<one-line decision summary>"` and run `arkouda check` to verify the new ADR validates.
+- **Use the four subcommands correctly** — including the `## Decision`-by-default contract of `arkouda decision`, the structured pipe-friendly output of `arkouda list`, and the `E000`–`E010` validator diagnostics with their fix hints.
+
+The skill is repo-agnostic: it discovers ADR paths via `arkouda list` rather than hardcoding `docs/adr/`, so it works across monorepos that use `.arkoudarc.toml` to point at multiple ADR directories.
 
 ## CI integration
 

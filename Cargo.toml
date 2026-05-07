@@ -1,10 +1,10 @@
 [package]
 name = "arkouda"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
-description = "CLI for navigating and validating Architecture Decision Records"
+description = "AI-native CLI for Architecture Decision Records — built for AI coding agents"
 license = "MIT OR Apache-2.0"
-keywords = ["adr", "architecture", "documentation", "cli"]
+keywords = ["adr", "ai-agents", "llm", "architecture", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 repository = "https://github.com/manuelmauro/arkouda"
 homepage = "https://github.com/manuelmauro/arkouda"
