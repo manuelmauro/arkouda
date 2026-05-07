@@ -2,7 +2,7 @@
 id: "basic-adr-cli"
 title: "Provide a basic ADR navigation and validation CLI"
 abstract: "Introduce a small CLI to navigate ADRs and validate their YAML metadata and Markdown structure."
-status: "proposed"
+status: "accepted"
 date: "2026-05-06"
 deciders: []
 tags:
@@ -15,7 +15,7 @@ tags:
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
