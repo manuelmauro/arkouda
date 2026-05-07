@@ -7,7 +7,8 @@ use std::process::ExitCode;
 
 /// Run the list command.
 pub fn run(args: &ListArgs, cli: &Cli) -> Result<ExitCode> {
-    let mut manifests = super::load_manifests(&cli.dir)?;
+    let dirs = super::effective_dirs(cli)?;
+    let mut manifests = super::load_manifests(&dirs)?;
     sort_manifests(&mut manifests, args.sort);
     if args.long {
         print_long(&manifests);

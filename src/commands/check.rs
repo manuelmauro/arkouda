@@ -8,7 +8,8 @@ use std::process::ExitCode;
 
 /// Run the check command.
 pub fn run(cli: &Cli) -> Result<ExitCode> {
-    let paths = super::discover_paths(&cli.dir)?;
+    let dirs = super::effective_dirs(cli)?;
+    let paths = super::discover_paths(&dirs)?;
 
     let mut report: Vec<(String, ValidationResult)> = paths
         .iter()

@@ -89,9 +89,23 @@ Required keys: `id`, `title`, `abstract`, `status`, `date`. Required body sectio
 
 ## Configuration
 
-| Setting   | Default     | Override                          |
-| --------- | ----------- | --------------------------------- |
-| ADR dir   | `docs/adr`  | `--dir <path>` or `ADR_DIR=<path>` |
+`--dir <path>` (and the `ADR_DIR` env var) point arkouda at a single directory and override everything else. With neither set, arkouda walks up from the working directory looking for `.arkoudarc.toml`; if found, its `dirs` list is used. With nothing configured, the default is `docs/adr`.
+
+`.arkoudarc.toml` lists one or more directories — useful for monorepos that keep ADRs per service or area:
+
+```toml
+dirs = [
+  "docs/adr",
+  "services/billing/docs/adr",
+  "services/identity/docs/adr",
+]
+```
+
+Relative paths resolve against the location of the config file, so the same file works from any subdirectory. `arkouda list`, `check`, and `decision` aggregate across every listed directory; `arkouda new` writes into the first one (use `--dir` to target another).
+
+| Setting   | Default     | Override (low → high precedence)                         |
+| --------- | ----------- | -------------------------------------------------------- |
+| ADR dirs  | `docs/adr`  | `.arkoudarc.toml` `dirs` → `ADR_DIR=<path>` → `--dir <path>` |
 
 ## Agent skill
 

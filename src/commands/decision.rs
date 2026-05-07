@@ -8,7 +8,8 @@ const DEFAULT_SECTION: &str = "decision";
 
 /// Run the decision command.
 pub fn run(args: &DecisionArgs, cli: &Cli) -> Result<ExitCode> {
-    let manifests = super::load_manifests(&cli.dir)?;
+    let dirs = super::effective_dirs(cli)?;
+    let manifests = super::load_manifests(&dirs)?;
     let matches: Vec<_> = manifests
         .iter()
         .filter(|manifest| super::matches_lookup(manifest, &args.id))

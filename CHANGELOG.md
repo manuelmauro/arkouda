@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `.arkoudarc.toml` config file with a `dirs = [...]` list of ADR directories, discovered by walking up from the working directory. Useful for monorepos that keep ADRs per service or area. Relative paths resolve against the config file's location, so the same file works from any subdirectory. `arkouda list`, `check`, and `decision` aggregate across all listed dirs; `arkouda new` writes into the first one (override with `--dir`). Precedence: `--dir` > `ADR_DIR` > `.arkoudarc.toml` > default `docs/adr`.
+
 ### Changed
 
 - `arkouda list` now prints one ADR file path per line by default — no header, no padded columns. Pipe it straight into `xargs`/`rg`/`cat`/`wc`. Pass `-l` for the long-form `ID STATUS DATE PATH TITLE` table (still headerless).
 - Replaced `arkouda show <id>` with `arkouda decision <id>`. The new command prints the body of the `## Decision` section by default; pass `--section <name>` to pick another. Full-file display moves to the shell (`cat docs/adr/<id>.md`). See [`docs/adr/ls-style-list-and-decision.md`](docs/adr/ls-style-list-and-decision.md) for rationale.
-- Renamed the agent skill `skills/arkouda` → `skills/use-arkouda` and rewrote it to be repo-agnostic: it now triggers any time a non-trivial decision is being made, not just when the user explicitly mentions ADRs. Drop it into any project that uses arkouda.
+- Renamed the agent skill `skills/arkouda` → `skills/use-arkouda` and rewrote it to be repo-agnostic: it now triggers any time a non-trivial decision is being made, not just when the user explicitly mentions ADRs, and tells agents to discover ADR paths via `arkouda list` instead of hardcoding `docs/adr/`. Drop it into any project that uses arkouda.
 
 ### Removed
 

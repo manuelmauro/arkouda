@@ -18,8 +18,10 @@ pub fn run(args: &NewArgs, cli: &Cli) -> Result<ExitCode> {
         return Err(ArkoudaError::InvalidId(id));
     }
 
-    std::fs::create_dir_all(&cli.dir)?;
-    let path = cli.dir.join(format!("{id}.md"));
+    let dirs = super::effective_dirs(cli)?;
+    let target_dir = super::primary_dir(&dirs);
+    std::fs::create_dir_all(target_dir)?;
+    let path = target_dir.join(format!("{id}.md"));
     if path.exists() {
         return Err(ArkoudaError::AdrExists {
             id,

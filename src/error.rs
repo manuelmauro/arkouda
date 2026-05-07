@@ -59,6 +59,15 @@ pub enum ArkoudaError {
         source: ManifestError,
     },
 
+    /// Parsing the configuration file failed.
+    #[error("{path}: {message}")]
+    Config {
+        /// Config file path.
+        path: String,
+        /// Underlying error message.
+        message: String,
+    },
+
     /// An I/O error occurred.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),

@@ -19,9 +19,9 @@ Reach for this skill any time you're about to make a non-trivial decision. Concr
 - Before refactoring away from a pattern you didn't introduce — you may be about to undo a deliberate decision.
 - When the user asks "did we ever decide on X?", "why is it done this way?", or otherwise touches motivation.
 - When the user asks for a new ADR or to mark one superseded.
-- Whenever you land in an unfamiliar repo with a `docs/adr/` directory.
+- Whenever you land in an unfamiliar repo with an ADR directory (commonly `docs/adr/`, but not always — see below).
 
-A 5-second `rg <topic> docs/adr/` is cheaper than redoing a debate that's already in the file. If a relevant ADR exists, build on it, propose superseding it, or notice you don't need to decide at all.
+A 5-second `arkouda list | xargs rg -i <topic>` is cheaper than redoing a debate that's already in the file. If a relevant ADR exists, build on it, propose superseding it, or notice you don't need to decide at all.
 
 ## Philosophy
 
@@ -34,14 +34,27 @@ The source rationale lives in arkouda's own repo, in the ADRs [`defer-to-unix-to
 
 ## Where ADRs live
 
-Default directory: `docs/adr/`. Override with `--dir <path>` on any command, or set `ADR_DIR=<path>` once for the session. Filenames are the ADR id with a `.md` suffix (e.g. `use-postgres.md`).
+The location varies between repos. Don't hardcode `docs/adr/` in pipelines — ask arkouda. Run **`arkouda list`** to get the actual ADR paths for the repo you're in.
+
+Resolution order, in case you need to set or override the location:
+
+1. `--dir <path>` flag (one-shot override, single directory).
+2. `ADR_DIR=<path>` environment variable (session override, single directory).
+3. `.arkoudarc.toml` at the repo root (or any ancestor of the cwd) with a `dirs = [...]` list — supports multiple directories, useful for monorepos:
+   ```toml
+   dirs = ["docs/adr", "services/billing/docs/adr"]
+   ```
+   Relative paths resolve against the config file's directory. `arkouda list`, `check`, and `decision` aggregate across all listed dirs; `arkouda new` writes into the first one.
+4. Default: `docs/adr/`.
+
+Filenames are the ADR id with a `.md` suffix (e.g. `use-postgres.md`), but the directory varies — let `arkouda list` tell you.
 
 ## Commands
 
 Four subcommands, each doing something the shell can't:
 
 - **`arkouda list [--sort id|date|status] [-l]`** — one ADR path per line. Pipe straight into `xargs`/`rg`/`cat`/`wc`. With `-l`, headerless `ID STATUS DATE PATH TITLE` table for human skimming.
-- **`arkouda decision <id> [--section <name>]`** — body of that ADR's `## Decision` section. `--section <name>` picks any other heading (`context`, `consequences`, `status`, or custom). Errors if the section is missing. For the full file: `cat docs/adr/<id>.md`.
+- **`arkouda decision <id> [--section <name>]`** — body of that ADR's `## Decision` section. `--section <name>` picks any other heading (`context`, `consequences`, `status`, or custom). Errors if the section is missing. For the full file, resolve the path through `arkouda list` and `cat` it.
 - **`arkouda check`** — validates frontmatter, filenames, and required Markdown sections across the collection. Exit 0 clean, 1 on any error. Each error carries a code (E000–E010) and a fix hint.
 - **`arkouda new "<title>" [--id <slug>] [--status proposed|accepted|superseded|deprecated|rejected] [--abstract "<one-line summary of the decision>"]`** — scaffold a new ADR with today's date. Default id is a slug from the title. The abstract should summarize *what was decided*, not just the topic.
 
@@ -51,9 +64,17 @@ There is intentionally no `search` subcommand and no full-file `show` — `rg`/`
 
 ## One-liners
 
+`arkouda list` is the path source — it's where the ADRs *actually* are in this repo.
+
 ```sh
-# Search ADRs for a topic
-rg -i postgres docs/adr/
+# Orient in an unfamiliar repo
+arkouda list -l && arkouda check
+
+# Paths of all ADRs (for piping)
+arkouda list
+
+# Search ADRs for a topic — let list provide the search roots
+arkouda list | xargs rg -i <topic>
 
 # Read the decision of a specific ADR
 arkouda decision use-postgres
@@ -61,14 +82,8 @@ arkouda decision use-postgres
 # Read another section instead
 arkouda decision use-postgres --section consequences
 
-# Read the whole ADR
-cat docs/adr/use-postgres.md
-
-# Orient in an unfamiliar repo
-arkouda list -l && arkouda check
-
-# Paths of all ADRs (for piping)
-arkouda list
+# Read the whole ADR — resolve the path through list
+cat "$(arkouda list | grep -F /use-postgres.md)"
 
 # Paths of accepted ADRs only
 arkouda list -l | awk '$2=="accepted" {print $4}'
@@ -78,9 +93,6 @@ arkouda list -l | awk '{print $2}' | sort | uniq -c
 
 # Most recent N decisions
 arkouda list -l --sort date | tail -10
-
-# Pipe every ADR into a content search
-arkouda list | xargs rg -i <query>
 
 # Stream every Decision section in the collection
 arkouda list | while read f; do
@@ -100,7 +112,7 @@ arkouda check
 **Before deciding** — search what's already there:
 
 ```sh
-rg -i <topic> docs/adr/                    # any mention, fastest
+arkouda list | xargs rg -i <topic>         # content search across all ADRs
 arkouda list -l | awk '$2=="accepted"'     # accepted decisions only
 arkouda decision <id>                      # read the meat of a hit
 ```
@@ -109,14 +121,15 @@ arkouda decision <id>                      # read the meat of a hit
 
 ```sh
 arkouda new "<Title>" --abstract "<one-line summary of what was decided>"
-# fill in Context, Decision, Consequences in docs/adr/<id>.md
+# arkouda new prints the path it created — open that file and fill in
+# Context, Decision, Consequences
 arkouda check
 ```
 
 **Supersede an existing decision**
 
-1. `cat docs/adr/<old-id>.md` to see the current frontmatter.
-2. Edit: change `status: "superseded"` and add `superseded_by: "<new-id>"`.
+1. Resolve the path: `path=$(arkouda list | grep -F /<old-id>.md)`.
+2. `cat "$path"` to see the current frontmatter, then edit: change `status: "superseded"` and add `superseded_by: "<new-id>"`.
 3. `arkouda new "<New Title>"` for the replacement.
 4. `arkouda check` to confirm both files still validate.
 
@@ -170,6 +183,7 @@ Each diagnostic has a code; the hint usually tells you the exact fix.
 ## What not to do
 
 - Don't make a non-trivial decision without first checking existing ADRs.
+- Don't hardcode `docs/adr/` in pipelines — different repos put ADRs elsewhere via `.arkoudarc.toml`. Use `arkouda list` to discover the actual paths.
 - Don't write or edit ADR files freehand without running `arkouda check` afterwards — the schema is strict.
 - Don't invent statuses outside the five valid values; downstream tooling depends on them.
 - Don't change a published ADR's `id` after creation; create a new ADR and mark the old one `superseded` instead.

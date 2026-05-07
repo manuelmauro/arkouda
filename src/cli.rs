@@ -14,9 +14,10 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
 
-    /// Directory containing ADR Markdown files.
-    #[arg(long, global = true, default_value = "docs/adr", env = "ADR_DIR")]
-    pub dir: PathBuf,
+    /// Directory containing ADR Markdown files. Overrides any `dirs` from
+    /// `.arkoudarc.toml`. When neither is set, defaults to `docs/adr`.
+    #[arg(long, global = true, env = "ADR_DIR")]
+    pub dir: Option<PathBuf>,
 
     /// Suppress non-essential informational output.
     #[arg(long, short, global = true)]
