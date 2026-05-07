@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-07
+
+### Docs
+
+- Reframe arkouda as an AI-native CLI built for AI coding agents. Updated README lede, GitHub About description and topics, and `Cargo.toml` description and keywords. The portable agent skill, structured pipe-friendly output, and `E000`–`E010` validator diagnostics were always there — the messaging now leads with them. README's Agent skill section expanded with the before/after-deciding workflow.
+
 ## [0.2.0] - 2026-05-07
 
 ### Added
@@ -56,6 +62,7 @@ Initial release.
 - Dual MIT/Apache-2.0 license.
 - Agent skills: `skills/arkouda` (how to use the CLI) and `skills/prepare-release` (how to cut a release).
 
+[0.2.1]: https://github.com/manuelmauro/arkouda/releases/tag/v0.2.1
 [0.2.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.2.0
 [0.1.1]: https://github.com/manuelmauro/arkouda/releases/tag/v0.1.1
 [0.1.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.1.0
