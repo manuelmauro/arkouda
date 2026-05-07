@@ -1,11 +1,13 @@
-//! Show one ADR.
+//! Print one ADR's decision (or another named section).
 
-use crate::cli::{Cli, ShowArgs};
+use crate::cli::{Cli, DecisionArgs};
 use crate::error::{ArkoudaError, Result};
 use std::process::ExitCode;
 
-/// Run the show command.
-pub fn run(args: &ShowArgs, cli: &Cli) -> Result<ExitCode> {
+const DEFAULT_SECTION: &str = "decision";
+
+/// Run the decision command.
+pub fn run(args: &DecisionArgs, cli: &Cli) -> Result<ExitCode> {
     let manifests = super::load_manifests(&cli.dir)?;
     let matches: Vec<_> = manifests
         .iter()
@@ -23,18 +25,14 @@ pub fn run(args: &ShowArgs, cli: &Cli) -> Result<ExitCode> {
         }
     };
 
-    if let Some(section) = args.section.as_deref() {
-        let body = manifest
-            .section(section)
-            .ok_or_else(|| ArkoudaError::SectionNotFound {
-                id: manifest.frontmatter.display_id().to_owned(),
-                section: section.to_owned(),
-            })?;
-        println!("{body}");
-    } else {
-        let content = std::fs::read_to_string(&manifest.path)?;
-        print!("{content}");
-    }
+    let section = args.section.as_deref().unwrap_or(DEFAULT_SECTION);
+    let body = manifest
+        .section(section)
+        .ok_or_else(|| ArkoudaError::SectionNotFound {
+            id: manifest.frontmatter.display_id().to_owned(),
+            section: section.to_owned(),
+        })?;
+    println!("{body}");
 
     Ok(ExitCode::SUCCESS)
 }

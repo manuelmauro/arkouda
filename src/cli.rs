@@ -26,11 +26,12 @@ pub struct Cli {
 /// Available CLI commands.
 #[derive(Subcommand)]
 pub enum Command {
-    /// List ADRs in the collection.
+    /// List ADRs in the collection. Prints one path per line; `-l` for the
+    /// table.
     List(ListArgs),
 
-    /// Show one ADR by id or filename.
-    Show(ShowArgs),
+    /// Print one ADR's `## Decision` section by id; `--section` to pick another.
+    Decision(DecisionArgs),
 
     /// Validate ADR frontmatter, filenames, and Markdown structure.
     Check,
@@ -45,16 +46,21 @@ pub struct ListArgs {
     /// Sort ADRs by this field.
     #[arg(long, default_value = "id", value_enum)]
     pub sort: SortBy,
+
+    /// Long form: print `ID STATUS DATE PATH TITLE` columns instead of just
+    /// paths. Headerless either way.
+    #[arg(short = 'l', long)]
+    pub long: bool,
 }
 
-/// Arguments for the `show` command.
+/// Arguments for the `decision` command.
 #[derive(clap::Args)]
-pub struct ShowArgs {
+pub struct DecisionArgs {
     /// ADR id, filename stem, or filename.
     pub id: String,
 
-    /// Print only the body of this `## <name>` section. Errors if the ADR has
-    /// no such section. Common values: `decision`, `context`, `consequences`,
+    /// Print this `## <name>` section instead of `## Decision`. Errors if the
+    /// ADR has no such section. Common values: `context`, `consequences`,
     /// `status`.
     #[arg(long)]
     pub section: Option<String>,

@@ -19,7 +19,7 @@ fn main() -> ExitCode {
 fn run(cli: &Cli) -> Result<ExitCode> {
     match &cli.command {
         Command::List(args) => commands::list::run(args, cli),
-        Command::Show(args) => commands::show::run(args, cli),
+        Command::Decision(args) => commands::decision::run(args, cli),
         Command::Check => commands::check::run(cli),
         Command::New(args) => commands::new::run(args, cli),
     }

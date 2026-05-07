@@ -5,7 +5,7 @@
 
 A small CLI for navigating and validating Architecture Decision Records (ADRs).
 
-Arkouda treats ADRs as plain Markdown files with YAML frontmatter. It parses the collection, validates the schema, scaffolds new entries, resolves an id to a file, and pulls a named `## Section` out for you. Anything a one-line shell pipeline does well — content search, counting, slicing — is left to `rg`, `grep`, `awk`, and friends. See [`docs/adr/defer-to-unix-tools.md`](docs/adr/defer-to-unix-tools.md) for the rationale.
+Arkouda treats ADRs as plain Markdown files with YAML frontmatter. It parses the collection, validates the schema, scaffolds new entries, and pulls a named `## Section` out for you. Anything a one-line shell pipeline does well — content search, counting, slicing, full-file printing — is left to `rg`, `grep`, `awk`, `cat`, and friends. See [`docs/adr/defer-to-unix-tools.md`](docs/adr/defer-to-unix-tools.md) and [`docs/adr/ls-style-list-and-decision.md`](docs/adr/ls-style-list-and-decision.md) for the rationale.
 
 ## Installation
 
@@ -23,28 +23,31 @@ make install
 ## Quick Start
 
 ```bash
-arkouda list                         # table: id, status, date, path, title
+arkouda list                         # one ADR path per line — pipe straight to xargs/rg/cat
+arkouda list -l                      # long form: id, status, date, path, title (no header)
 arkouda check                        # validate frontmatter + Markdown structure
 arkouda new "Use Postgres"           # scaffold docs/adr/use-postgres.md
-arkouda show use-postgres            # print the full ADR
-arkouda show use-postgres \
-  --section decision                 # print just one section's body
+arkouda decision use-postgres        # print the Decision section
+arkouda decision use-postgres \
+  --section context                  # print another section's body
+cat docs/adr/use-postgres.md         # full file — that's just cat
 rg postgres docs/adr/                # content search — use rg/grep, not arkouda
 
 # Pipe-friendly: list emits paths, shell takes it from there
-arkouda list | awk 'NR>1 && $2=="proposed" {print $4}' | xargs cat
+arkouda list | xargs rg postgres
+arkouda list -l | awk '$2=="accepted" {print $4}' | xargs cat
 ```
 
 Run `arkouda --help` and `arkouda <subcommand> --help` for the full surface.
 
 ## Commands
 
-| Command   | Description                                                                |
-| --------- | -------------------------------------------------------------------------- |
-| `list`    | Print a table of ADRs (id, status, date, path, title)                      |
-| `show`    | Print one ADR by id, or only its `--section <name>` body                   |
-| `check`   | Validate every ADR's frontmatter, filename, and required Markdown sections |
-| `new`     | Scaffold a new ADR from the standard template                              |
+| Command    | Description                                                                |
+| ---------- | -------------------------------------------------------------------------- |
+| `list`     | Print one ADR path per line; `-l` for the `id status date path title` table |
+| `decision` | Print one ADR's `## Decision` section; `--section <name>` to pick another  |
+| `check`    | Validate every ADR's frontmatter, filename, and required Markdown sections |
+| `new`      | Scaffold a new ADR from the standard template                              |
 
 Global flags: `--dir <path>` (also `ADR_DIR`), `-q/--quiet`.
 

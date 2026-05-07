@@ -5,9 +5,9 @@ use crate::error::{ArkoudaError, Result};
 use std::path::{Path, PathBuf};
 
 pub mod check;
+pub mod decision;
 pub mod list;
 pub mod new;
-pub mod show;
 
 pub(crate) fn discover_paths(dir: &Path) -> Result<Vec<PathBuf>> {
     let paths = discovery::find_adrs(dir)?;

@@ -6,7 +6,7 @@ license: MIT
 
 # Arkouda
 
-Use this skill when working in a repository that stores Architecture Decision Records (ADRs) as Markdown files with YAML frontmatter, and the `arkouda` CLI is available. The tool reads, validates, and scaffolds those records, and resolves an id to a section. For content search, lean on `rg`/`grep` — arkouda does not reinvent that.
+Use this skill when working in a repository that stores Architecture Decision Records (ADRs) as Markdown files with YAML frontmatter, and the `arkouda` CLI is available. The tool reads, validates, and scaffolds those records, and pulls a named `## Section` out of one. For content search, full-file display, or any other shell-friendly operation, lean on `rg`/`grep`/`cat` — arkouda does not reinvent those.
 
 ## When to use
 
@@ -23,16 +23,16 @@ Default directory: `docs/adr/`. Override with `--dir <path>` on any command, or 
 
 ## Commands
 
-Run `arkouda --help` and `arkouda <subcommand> --help` to see the authoritative CLI surface. The four subcommands:
+Run `arkouda --help` and `arkouda <subcommand> --help` to see the authoritative CLI surface. The four subcommands all have a clear reason to exist that `ls`/`cat`/`grep` cannot replicate:
 
-- **`arkouda list [--sort id|date|status]`** — print a table of every ADR in the directory: `ID`, `STATUS`, `DATE`, `PATH`, `TITLE`. The `PATH` column is the actual file path, so you can pipe rows into `cat`/`rg`/`xargs` to compose your own queries (e.g. `arkouda list | awk 'NR>1 && $2=="accepted" {print $4}' | xargs cat`).
-- **`arkouda show <id> [--section <name>]`** — print one ADR's full Markdown to stdout. `<id>` accepts the frontmatter id, the filename stem, or the filename. With `--section <name>`, print only that section's body; errors if the ADR has no such section.
+- **`arkouda list [--sort id|date|status] [-l]`** — print one ADR file path per line. No header, no padding — pipe straight into `xargs`/`rg`/`cat`/`wc`. With `-l`, print a headerless table of `ID STATUS DATE PATH TITLE` for human skimming (still pipe-friendly: `arkouda list -l | awk '$2=="accepted" {print $4}'`).
+- **`arkouda decision <id> [--section <name>]`** — print the body of that ADR's `## Decision` section (case-insensitive H2, blank lines trimmed). `<id>` accepts the frontmatter id, the filename stem, or the filename. Use `--section <name>` to print a different section (e.g. `context`, `consequences`, `status`, or any custom heading); errors if the section is missing. For the full file, just `cat docs/adr/<id>.md`.
 - **`arkouda check`** — validate every ADR's frontmatter, filename, and required Markdown sections. Exit code 0 if clean, 1 if any errors. Each error has a code (E000–E010) and a fix hint.
 - **`arkouda new "<title>" [--id <slug>] [--status proposed|accepted|superseded|deprecated|rejected] [--abstract "<one-line summary of the decision>"]`** — scaffold a new ADR with the standard template and today's date. The id defaults to a slug derived from the title. The abstract should summarize *what was decided*, not just the topic.
 
 Global flags: `--dir <path>` (also `ADR_DIR`), `-q/--quiet`.
 
-Arkouda intentionally has no `search` subcommand. Use `rg <query> docs/adr/` (or `grep -ri`) for content search, and pipe arkouda's structured output through `awk`/`jq`/etc. when you need to combine queries. See ADR `defer-to-unix-tools` for the rationale.
+Arkouda intentionally has no `search` subcommand and no full-file `show`. Use `rg <query> docs/adr/` (or `grep -ri`) for content search, `cat docs/adr/<id>.md` for the full file, and pipe arkouda's structured output through `awk`/`xargs`/etc. when you need to combine queries. See ADRs `defer-to-unix-tools` and `ls-style-list-and-decision` for the rationale.
 
 ## ADR shape (what `check` enforces)
 
@@ -75,7 +75,7 @@ Required keys: `id`, `title`, `abstract`, `status`, `date`. Required body sectio
 **Get oriented in a new repo**
 
 ```sh
-arkouda list
+arkouda list -l        # headerless table — id, status, date, path, title
 arkouda check          # surface any drift before reading further
 ```
 
@@ -83,21 +83,25 @@ arkouda check          # surface any drift before reading further
 
 ```sh
 rg -i X docs/adr/                  # find files containing X
-arkouda show <id>                  # read the hits
-arkouda list --section decision \
-  | rg -i X                        # search just inside Decision sections
+arkouda decision <id>              # read what was decided
+cat docs/adr/<id>.md               # read the full ADR if you need context
 ```
 
 **Skim every decision (or context, consequences, …) at once**
 
 ```sh
 # Single ADR, single section — direct CLI support:
-arkouda show use-postgres --section decision
+arkouda decision use-postgres
+arkouda decision use-postgres --section context
 
 # Across the collection, compose with the shell. arkouda list emits paths,
-# so the section extractor can be a small awk/sed/rg pipeline.
-arkouda list | awk 'NR>1 {print $4}' \
-  | while read f; do echo "## $(basename "$f" .md)"; arkouda show "$(basename "$f" .md)" --section decision; echo; done
+# so the section extractor is a small awk/while loop.
+arkouda list | while read f; do
+  id=$(basename "$f" .md)
+  echo "## $id"
+  arkouda decision "$id"
+  echo
+done
 ```
 
 **Propose a new decision**
@@ -110,7 +114,7 @@ arkouda check          # confirm it validates before committing
 
 **Mark a decision superseded**
 
-1. Run `arkouda show <old-id>` to see the current frontmatter.
+1. Run `cat docs/adr/<old-id>.md` to see the current frontmatter.
 2. Edit the file: change `status: "superseded"` and add `superseded_by: "<new-id>"`.
 3. Create the replacement with `arkouda new "<New Title>"`.
 4. Run `arkouda check` to confirm both files still validate.

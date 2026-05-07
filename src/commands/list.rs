@@ -9,11 +9,15 @@ use std::process::ExitCode;
 pub fn run(args: &ListArgs, cli: &Cli) -> Result<ExitCode> {
     let mut manifests = super::load_manifests(&cli.dir)?;
     sort_manifests(&mut manifests, args.sort);
-    print_manifest_rows(&manifests);
+    if args.long {
+        print_long(&manifests);
+    } else {
+        print_paths(&manifests);
+    }
     Ok(ExitCode::SUCCESS)
 }
 
-pub(crate) fn sort_manifests(manifests: &mut [Manifest], sort: SortBy) {
+fn sort_manifests(manifests: &mut [Manifest], sort: SortBy) {
     manifests.sort_by(|left, right| {
         let primary = match sort {
             SortBy::Id => left
@@ -41,30 +45,28 @@ pub(crate) fn sort_manifests(manifests: &mut [Manifest], sort: SortBy) {
     });
 }
 
-pub(crate) fn print_manifest_rows(manifests: &[Manifest]) {
+fn print_paths(manifests: &[Manifest]) {
+    for manifest in manifests {
+        println!("{}", manifest.path.display());
+    }
+}
+
+fn print_long(manifests: &[Manifest]) {
     let id_width = manifests
         .iter()
         .map(|manifest| manifest.frontmatter.display_id().len())
         .max()
-        .unwrap_or(2)
-        .max(2);
+        .unwrap_or(0);
     let status_width = manifests
         .iter()
         .map(|manifest| manifest.frontmatter.display_status().len())
         .max()
-        .unwrap_or(6)
-        .max(6);
+        .unwrap_or(0);
     let path_width = manifests
         .iter()
         .map(|manifest| manifest.path.display().to_string().len())
         .max()
-        .unwrap_or(4)
-        .max(4);
-
-    println!(
-        "{:<id_width$}  {:<status_width$}  {:<10}  {:<path_width$}  TITLE",
-        "ID", "STATUS", "DATE", "PATH",
-    );
+        .unwrap_or(0);
 
     for manifest in manifests {
         let frontmatter = &manifest.frontmatter;
