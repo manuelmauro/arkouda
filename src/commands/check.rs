@@ -4,10 +4,9 @@ use crate::adr::{Diagnostic, DiagnosticCode, Manifest, ValidationResult, validat
 use crate::cli::Cli;
 use crate::error::Result;
 use colored::Colorize;
-use std::process::ExitCode;
 
 /// Run the check command.
-pub fn run(cli: &Cli) -> Result<ExitCode> {
+pub fn run(cli: &Cli) -> Result<i32> {
     let dirs = super::effective_dirs(cli)?;
     let paths = super::discover_paths(&dirs)?;
 
@@ -42,11 +41,7 @@ pub fn run(cli: &Cli) -> Result<ExitCode> {
     print_report(&report, cli.quiet);
 
     let total_errors: usize = report.iter().map(|(_, r)| r.errors.len()).sum();
-    Ok(if total_errors > 0 {
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
-    })
+    Ok(if total_errors > 0 { 1 } else { 0 })
 }
 
 #[derive(Clone, Copy)]

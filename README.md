@@ -109,6 +109,20 @@ Relative paths resolve against the location of the config file, so the same file
 | --------- | ----------- | -------------------------------------------------------- |
 | ADR dirs  | `docs/adr`  | `.arkoudarc.toml` `dirs` → `ADR_DIR=<path>` → `--dir <path>` |
 
+## Telemetry
+
+Arkouda records one JSON event per invocation to a local file under your OS state directory (`~/Library/Application Support/arkouda/telemetry.jsonl` on macOS, `$XDG_STATE_HOME/arkouda/telemetry.jsonl` or `~/.local/state/arkouda/telemetry.jsonl` elsewhere). The data never leaves your machine — there is no network sink. The goal is to learn how AI coding agents actually invoke arkouda so future surface decisions are informed by usage rather than guesses.
+
+Each event captures the subcommand, redacted argv (paths and free-text titles are replaced with `<path>` / `<title>` markers; flag names and short slugs pass through), exit code, duration, and a short agent identifier derived from a small env-var allowlist (`CLAUDECODE` → `claude-code`, `CURSOR_AGENT` → `cursor`, `AIDER` → `aider`). ADR titles, abstracts, and contents are never recorded. Write failures are silently swallowed; the log rotates at 10 MiB keeping one prior file.
+
+Telemetry is on by default. Opt out per-session with `ARKOUDA_TELEMETRY=0` or per-project in `.arkoudarc.toml`:
+
+```toml
+telemetry = false
+```
+
+See [`docs/adr/telemetry-for-agent-command-invocations.md`](docs/adr/telemetry-for-agent-command-invocations.md) for the full design.
+
 ## Agent skill
 
 [`skills/use-arkouda/SKILL.md`](skills/use-arkouda/SKILL.md) is a portable, [skilo](https://github.com/manuelmauro/skilo)-validated agent skill — drop it into any project that uses arkouda. It teaches an AI coding agent to:
