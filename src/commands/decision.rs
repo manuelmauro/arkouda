@@ -2,12 +2,11 @@
 
 use crate::cli::{Cli, DecisionArgs};
 use crate::error::{ArkoudaError, Result};
-use std::process::ExitCode;
 
 const DEFAULT_SECTION: &str = "decision";
 
 /// Run the decision command.
-pub fn run(args: &DecisionArgs, cli: &Cli) -> Result<ExitCode> {
+pub fn run(args: &DecisionArgs, cli: &Cli) -> Result<i32> {
     let dirs = super::effective_dirs(cli)?;
     let manifests = super::load_manifests(&dirs)?;
     let matches: Vec<_> = manifests
@@ -35,5 +34,5 @@ pub fn run(args: &DecisionArgs, cli: &Cli) -> Result<ExitCode> {
         })?;
     println!("{body}");
 
-    Ok(ExitCode::SUCCESS)
+    Ok(0)
 }

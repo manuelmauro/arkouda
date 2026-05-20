@@ -17,6 +17,8 @@ const DEFAULT_DIR: &str = "docs/adr";
 struct ConfigFile {
     #[serde(default)]
     dirs: Vec<PathBuf>,
+    #[serde(default)]
+    telemetry: Option<bool>,
 }
 
 /// Effective list of directories to scan for ADRs, given CLI overrides and
@@ -47,6 +49,24 @@ fn discover(start: &Path) -> Result<Option<Vec<PathBuf>>> {
                     message,
                 }
             })?));
+        }
+    }
+    Ok(None)
+}
+
+/// Telemetry toggle from `.arkoudarc.toml` discovered above `start`. Returns
+/// `Ok(None)` when there is no config or no `telemetry` key — telemetry
+/// resolution should then fall back to its default.
+pub fn telemetry_from_config(start: &Path) -> Result<Option<bool>> {
+    for ancestor in start.ancestors() {
+        let candidate = ancestor.join(FILENAME);
+        if candidate.is_file() {
+            let text = std::fs::read_to_string(&candidate)?;
+            let parsed: ConfigFile = toml::from_str(&text).map_err(|err| ArkoudaError::Config {
+                path: candidate.display().to_string(),
+                message: err.to_string(),
+            })?;
+            return Ok(parsed.telemetry);
         }
     }
     Ok(None)
@@ -109,5 +129,15 @@ mod tests {
     fn malformed_toml_is_an_error() {
         let result = parse("dirs = not-a-list\n", Path::new("/repo"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn telemetry_key_is_round_tripped() {
+        let parsed: ConfigFile = toml::from_str("telemetry = false\n").unwrap();
+        assert_eq!(parsed.telemetry, Some(false));
+        let parsed: ConfigFile = toml::from_str("telemetry = true\n").unwrap();
+        assert_eq!(parsed.telemetry, Some(true));
+        let parsed: ConfigFile = toml::from_str("dirs = [\"docs/adr\"]\n").unwrap();
+        assert_eq!(parsed.telemetry, None);
     }
 }

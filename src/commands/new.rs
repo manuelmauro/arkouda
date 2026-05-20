@@ -6,10 +6,9 @@ use crate::error::{ArkoudaError, Result};
 use chrono::Local;
 use colored::Colorize;
 use serde::Serialize;
-use std::process::ExitCode;
 
 /// Run the new command.
-pub fn run(args: &NewArgs, cli: &Cli) -> Result<ExitCode> {
+pub fn run(args: &NewArgs, cli: &Cli) -> Result<i32> {
     let id = match args.id.as_deref() {
         Some(explicit) => explicit.to_owned(),
         None => slugify(&args.title),
@@ -47,7 +46,7 @@ pub fn run(args: &NewArgs, cli: &Cli) -> Result<ExitCode> {
         );
     }
 
-    Ok(ExitCode::SUCCESS)
+    Ok(0)
 }
 
 #[derive(Serialize)]

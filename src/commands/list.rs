@@ -3,10 +3,9 @@
 use crate::adr::Manifest;
 use crate::cli::{Cli, ListArgs, SortBy};
 use crate::error::Result;
-use std::process::ExitCode;
 
 /// Run the list command.
-pub fn run(args: &ListArgs, cli: &Cli) -> Result<ExitCode> {
+pub fn run(args: &ListArgs, cli: &Cli) -> Result<i32> {
     let dirs = super::effective_dirs(cli)?;
     let mut manifests = super::load_manifests(&dirs)?;
     sort_manifests(&mut manifests, args.sort);
@@ -15,7 +14,7 @@ pub fn run(args: &ListArgs, cli: &Cli) -> Result<ExitCode> {
     } else {
         print_paths(&manifests);
     }
-    Ok(ExitCode::SUCCESS)
+    Ok(0)
 }
 
 fn sort_manifests(manifests: &mut [Manifest], sort: SortBy) {
