@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-20
+
+### Added
+
+- Local invocation telemetry. Each arkouda invocation appends one JSON event to `telemetry.jsonl` under the OS state directory (`~/Library/Application Support/arkouda` on macOS, `$XDG_STATE_HOME/arkouda` or `~/.local/state/arkouda` elsewhere) — no network, no remote collector. Events capture the subcommand, redacted argv (paths and free-text titles become `<path>` / `<title>` markers; flag names and short slugs pass through), exit code, duration, TTY presence, and an agent identifier derived from a small env-var allowlist (`CLAUDECODE` → `claude-code`, `CURSOR_AGENT` → `cursor`, `AIDER` → `aider`). The log rotates at 10 MiB keeping one prior file. Write failures are silently swallowed so telemetry never affects the command's outcome. See [`docs/adr/telemetry-for-agent-command-invocations.md`](docs/adr/telemetry-for-agent-command-invocations.md) for the full design.
+- `telemetry` key in `.arkoudarc.toml` (`telemetry = false` to opt out per-project).
+
+### Changed
+
+- Telemetry is on by default. Opt out with `ARKOUDA_TELEMETRY=0` (also accepts `false`/`off`/`no`) or `telemetry = false` in `.arkoudarc.toml`. The first eligible invocation prints a one-line notice to stderr pointing at the log path and the opt-out; the notice is suppressed under `--quiet` and on subsequent runs via a sentinel file.
+
 ## [0.2.1] - 2026-05-07
 
 ### Docs
@@ -62,6 +73,7 @@ Initial release.
 - Dual MIT/Apache-2.0 license.
 - Agent skills: `skills/arkouda` (how to use the CLI) and `skills/prepare-release` (how to cut a release).
 
+[0.3.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.3.0
 [0.2.1]: https://github.com/manuelmauro/arkouda/releases/tag/v0.2.1
 [0.2.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.2.0
 [0.1.1]: https://github.com/manuelmauro/arkouda/releases/tag/v0.1.1
