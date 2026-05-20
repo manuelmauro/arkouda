@@ -8,7 +8,10 @@ use std::time::Instant;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let argv: Vec<String> = std::env::args().skip(1).collect();
+    let argv: Vec<String> = std::env::args_os()
+        .skip(1)
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
     let telemetry = Telemetry::from_env(cli.quiet);
     let start = Instant::now();
 
@@ -26,10 +29,9 @@ fn main() -> ExitCode {
         eprintln!("{} {}", "error:".red().bold(), message);
         return ExitCode::FAILURE;
     }
-    if exit_int == 0 {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
+    match u8::try_from(exit_int) {
+        Ok(code) => ExitCode::from(code),
+        Err(_) => ExitCode::FAILURE,
     }
 }
 

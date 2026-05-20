@@ -242,9 +242,21 @@ pub(crate) fn redact_args(raw_args: &[String], command_name: Option<&str>) -> Ve
 }
 
 pub(crate) fn redact_token(token: &str) -> String {
+    // `--flag=value` smuggles the value past the flag check below; split and
+    // redact the value half so paths/titles can't leak via the long-form
+    // assignment syntax.
+    if token.starts_with('-')
+        && let Some((flag, value)) = token.split_once('=')
+    {
+        return format!("{flag}={}", redact_value(value));
+    }
     if token.starts_with('-') {
         return token.to_owned();
     }
+    redact_value(token)
+}
+
+fn redact_value(token: &str) -> String {
     if token.chars().any(char::is_whitespace) {
         return "<title>".to_owned();
     }
@@ -308,12 +320,19 @@ mod tests {
     }
 
     #[test]
-    fn keeps_flag_tokens_even_with_path_chars() {
-        // Flag-style tokens never get redacted, even if they syntactically
-        // look pathy (e.g. `--dir=docs/adr`).
+    fn bare_flag_tokens_pass_through() {
         assert_eq!(redact_token("--section"), "--section");
-        assert_eq!(redact_token("--dir=docs/adr"), "--dir=docs/adr");
         assert_eq!(redact_token("-l"), "-l");
+    }
+
+    #[test]
+    fn redacts_value_in_long_form_assignment() {
+        assert_eq!(redact_token("--dir=docs/adr"), "--dir=<path>");
+        assert_eq!(
+            redact_token("--abstract=Use Postgres"),
+            "--abstract=<title>"
+        );
+        assert_eq!(redact_token("--sort=id"), "--sort=id");
     }
 
     #[test]
