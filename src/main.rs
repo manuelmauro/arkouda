@@ -29,9 +29,10 @@ fn main() -> ExitCode {
         eprintln!("{} {}", "error:".red().bold(), message);
         return ExitCode::FAILURE;
     }
-    match u8::try_from(exit_int) {
-        Ok(code) => ExitCode::from(code),
-        Err(_) => ExitCode::FAILURE,
+    if exit_int == 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
     }
 }
 
