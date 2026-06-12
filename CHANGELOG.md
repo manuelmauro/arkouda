@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-12
+
 ### Added
 
 - `arkouda self completions <shell>` — print a shell completion script to stdout for `bash`, `zsh`, `fish`, `powershell`, or `elvish`, generated with `clap_complete`. Add `eval "$(arkouda self completions bash)"` to your shell profile (or `arkouda self completions fish | source`) for tab completion of subcommands, flags, and enum values.
@@ -78,6 +80,7 @@ Initial release.
 - Dual MIT/Apache-2.0 license.
 - Agent skills: `skills/arkouda` (how to use the CLI) and `skills/prepare-release` (how to cut a release).
 
+[0.4.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.4.0
 [0.3.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.3.0
 [0.2.1]: https://github.com/manuelmauro/arkouda/releases/tag/v0.2.1
 [0.2.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.2.0
