@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `arkouda self completions <shell>` — print a shell completion script to stdout for `bash`, `zsh`, `fish`, `powershell`, or `elvish`, generated with `clap_complete`. Add `eval "$(arkouda self completions bash)"` to your shell profile (or `arkouda self completions fish | source`) for tab completion of subcommands, flags, and enum values.
+- Pinned Rust toolchain via `rust-toolchain.toml` (1.92.0 with `rustfmt` and `clippy`) for reproducible builds across contributors.
+
 ## [0.3.0] - 2026-05-20
 
 ### Added
