@@ -124,6 +124,7 @@ pub enum Shell {
     /// Fish shell.
     Fish,
     /// PowerShell.
+    #[value(name = "powershell")]
     PowerShell,
     /// Elvish shell.
     Elvish,
