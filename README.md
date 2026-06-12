@@ -50,6 +50,7 @@ Run `arkouda --help` and `arkouda <subcommand> --help` for the full surface.
 | `decision` | Print one ADR's `## Decision` section; `--section <name>` to pick another  |
 | `check`    | Validate every ADR's frontmatter, filename, and required Markdown sections |
 | `new`      | Scaffold a new ADR from the standard template                              |
+| `self completions` | Print a shell completion script (`bash`, `zsh`, `fish`, `powershell`, `elvish`) |
 
 Global flags: `--dir <path>` (also `ADR_DIR`), `-q/--quiet`.
 
@@ -108,6 +109,21 @@ Relative paths resolve against the location of the config file, so the same file
 | Setting   | Default     | Override (low → high precedence)                         |
 | --------- | ----------- | -------------------------------------------------------- |
 | ADR dirs  | `docs/adr`  | `.arkoudarc.toml` `dirs` → `ADR_DIR=<path>` → `--dir <path>` |
+
+## Shell completions
+
+`arkouda self completions <shell>` prints a completion script to stdout for `bash`, `zsh`, `fish`, `powershell`, or `elvish`.
+
+```bash
+# Bash (add to ~/.bashrc)
+eval "$(arkouda self completions bash)"
+
+# Zsh (add to ~/.zshrc)
+eval "$(arkouda self completions zsh)"
+
+# Fish (add to ~/.config/fish/config.fish)
+arkouda self completions fish | source
+```
 
 ## Telemetry
 

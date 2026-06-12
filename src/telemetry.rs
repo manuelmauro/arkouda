@@ -274,6 +274,7 @@ impl Command {
             Self::Decision(_) => "decision",
             Self::Check => "check",
             Self::New(_) => "new",
+            Self::SelfCmd(_) => "self",
         }
     }
 }

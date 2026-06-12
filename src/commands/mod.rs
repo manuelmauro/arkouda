@@ -7,6 +7,7 @@ use crate::error::{ArkoudaError, Result};
 use std::path::{Path, PathBuf};
 
 pub mod check;
+pub mod completions;
 pub mod decision;
 pub mod list;
 pub mod new;
