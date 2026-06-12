@@ -39,6 +39,10 @@ pub enum Command {
 
     /// Create a new ADR from the standard template.
     New(NewArgs),
+
+    /// Manage the arkouda installation.
+    #[command(name = "self")]
+    SelfCmd(SelfArgs),
 }
 
 /// Arguments for the `list` command.
@@ -85,6 +89,44 @@ pub struct NewArgs {
     /// topic). Defaults to a TODO placeholder.
     #[arg(long = "abstract")]
     pub abstract_text: Option<String>,
+}
+
+/// Arguments for the `self` command.
+#[derive(clap::Args)]
+pub struct SelfArgs {
+    /// The `self` subcommand to run.
+    #[command(subcommand)]
+    pub command: SelfCommand,
+}
+
+/// `self` subcommands.
+#[derive(Subcommand)]
+pub enum SelfCommand {
+    /// Generate shell completions for the given shell, printed to stdout.
+    Completions(CompletionsArgs),
+}
+
+/// Arguments for the `self completions` command.
+#[derive(clap::Args)]
+pub struct CompletionsArgs {
+    /// Shell to generate completions for.
+    #[arg(value_enum)]
+    pub shell: Shell,
+}
+
+/// Supported shells for completion generation.
+#[derive(ValueEnum, Clone, Copy, Debug)]
+pub enum Shell {
+    /// Bash shell.
+    Bash,
+    /// Zsh shell.
+    Zsh,
+    /// Fish shell.
+    Fish,
+    /// PowerShell.
+    PowerShell,
+    /// Elvish shell.
+    Elvish,
 }
 
 /// Field used to sort ADRs.
