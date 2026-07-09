@@ -99,6 +99,7 @@ Writes use `O_APPEND` on a single line per event; partial writes from a killed p
 
 ### What is *not* recorded
 
+- No `self completions` invocations. Shells run `eval "$(arkouda self completions zsh)"` from their startup file, so the command fires once per shell rather than once per deliberate use; recording it buries real invocations under startup noise.
 - No ADR content, no titles, no abstracts, no file paths beyond the redacted kind.
 - No environment variables other than the agent-detection allowlist.
 - No hostname, username, IP address, or any other host identifier.

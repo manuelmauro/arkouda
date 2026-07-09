@@ -23,7 +23,9 @@ fn main() -> ExitCode {
         Err(error) => (1, Some(error.to_string())),
     };
 
-    telemetry.record(&Event::capture(&cli, &argv, exit_int, elapsed));
+    if cli.command.is_recorded() {
+        telemetry.record(&Event::capture(&cli, &argv, exit_int, elapsed));
+    }
 
     if let Some(message) = error_message {
         eprintln!("{} {}", "error:".red().bold(), message);
