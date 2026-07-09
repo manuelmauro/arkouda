@@ -5,7 +5,7 @@
 //! leaves the user's machine. See ADR
 //! `telemetry-for-agent-command-invocations` for the full rationale.
 
-use crate::cli::{Cli, Command};
+use crate::cli::{Cli, Command, SelfCommand};
 use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use std::fs::{File, OpenOptions};
@@ -277,11 +277,43 @@ impl Command {
             Self::SelfCmd(_) => "self",
         }
     }
+
+    /// Whether an invocation of this command should be recorded.
+    ///
+    /// Completion generation is excluded: shells run
+    /// `eval "$(arkouda self completions zsh)"` from their startup file, so it
+    /// fires once per shell rather than once per deliberate use, and drowns
+    /// out real invocations.
+    pub fn is_recorded(&self) -> bool {
+        match self {
+            Self::SelfCmd(args) => !matches!(args.command, SelfCommand::Completions(_)),
+            _ => true,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
+
+    fn command_of(argv: &[&str]) -> Command {
+        Cli::parse_from(argv).command
+    }
+
+    #[test]
+    fn completions_are_not_recorded() {
+        assert!(!command_of(&["arkouda", "self", "completions", "zsh"]).is_recorded());
+        assert!(!command_of(&["arkouda", "self", "completions", "bash"]).is_recorded());
+    }
+
+    #[test]
+    fn real_commands_are_recorded() {
+        assert!(command_of(&["arkouda", "check"]).is_recorded());
+        assert!(command_of(&["arkouda", "list", "-l"]).is_recorded());
+        assert!(command_of(&["arkouda", "decision", "use-postgres"]).is_recorded());
+        assert!(command_of(&["arkouda", "new", "Use Postgres"]).is_recorded());
+    }
 
     #[test]
     fn redacts_paths_and_titles_keeps_flags_and_slugs() {
