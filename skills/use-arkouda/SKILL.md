@@ -8,6 +8,8 @@ license: MIT
 
 In repositories that record decisions as ADRs (Architecture Decision Records — Markdown files with YAML frontmatter, conventionally under `docs/adr/`), `arkouda` is the CLI for finding, reading, validating, and scaffolding them. **Before you decide, check what's already been decided. After you decide, capture it.**
 
+An ADR directory is an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) (OKF) v0.1 *knowledge bundle*: each ADR is a *concept* whose id is its path within the bundle without the `.md` suffix (`security/mtls.md` → `security/mtls`). `index.md` and `log.md` are reserved by OKF and are never ADRs.
+
 If a repo has no ADR directory yet but the `arkouda` binary is installed, this skill is also the right one to reach for: `arkouda new` enforces the schema from the first file.
 
 ## When to use
@@ -29,8 +31,9 @@ Two principles shape arkouda's behaviour, and explain why some defaults look min
 
 - **Defer to Unix tools.** Arkouda earns subcommands only where standard shell tools (`rg`, `grep`, `cat`, `awk`, `xargs`) cannot. Content search, full-file printing, counting, and slicing are left to the shell — the CLI emits structured output you compose with the rest of your toolbox. Hence: no `search`, no full-file `show`.
 - **Decision-centric defaults.** `arkouda list` prints one ADR path per line (no header, no padding) so it pipes cleanly. The body of an ADR, for arkouda's purposes, is its `## Decision` section, so `arkouda decision <id>` defaults to that section's body — supporting sections (`context`, `consequences`, `status`, custom) are opt-in via `--section`.
+- **Standard format over bespoke.** ADRs are stored as OKF concepts so any OKF-aware consumer can read them without special-casing arkouda.
 
-The source rationale lives in arkouda's own repo, in the ADRs [`defer-to-unix-tools`](https://github.com/manuelmauro/arkouda/blob/main/docs/adr/defer-to-unix-tools.md) and [`ls-style-list-and-decision`](https://github.com/manuelmauro/arkouda/blob/main/docs/adr/ls-style-list-and-decision.md).
+The source rationale lives in arkouda's own repo, in the ADRs [`defer-to-unix-tools`](https://github.com/manuelmauro/arkouda/blob/main/docs/adr/defer-to-unix-tools.md), [`ls-style-list-and-decision`](https://github.com/manuelmauro/arkouda/blob/main/docs/adr/ls-style-list-and-decision.md), and [`adopt-okf`](https://github.com/manuelmauro/arkouda/blob/main/docs/adr/adopt-okf.md).
 
 ## Where ADRs live
 
@@ -47,16 +50,17 @@ Resolution order, in case you need to set or override the location:
    Relative paths resolve against the config file's directory. `arkouda list`, `check`, and `decision` aggregate across all listed dirs; `arkouda new` writes into the first one.
 4. Default: `docs/adr/`.
 
-Filenames are the ADR id with a `.md` suffix (e.g. `use-postgres.md`), but the directory varies — let `arkouda list` tell you.
+Filenames are the ADR id with a `.md` suffix (e.g. `use-postgres.md`), but the directory varies — let `arkouda list` tell you. Bundles may nest: an ADR at `security/mtls.md` has the concept id `security/mtls`, and `arkouda decision` accepts either that or the bare stem `mtls`.
 
 ## Commands
 
-Four subcommands, each doing something the shell can't:
+Five subcommands, each doing something the shell can't:
 
-- **`arkouda list [--sort id|date|status] [-l]`** — one ADR path per line. Pipe straight into `xargs`/`rg`/`cat`/`wc`. With `-l`, headerless `ID STATUS DATE PATH TITLE` table for human skimming.
+- **`arkouda list [--sort id|timestamp|status] [-l]`** — one ADR path per line. Pipe straight into `xargs`/`rg`/`cat`/`wc`. With `-l`, headerless `ID STATUS TIMESTAMP PATH TITLE` table for human skimming.
 - **`arkouda decision <id> [--section <name>]`** — body of that ADR's `## Decision` section. `--section <name>` picks any other heading (`context`, `consequences`, `status`, or custom). Errors if the section is missing. For the full file, resolve the path through `arkouda list` and `cat` it.
-- **`arkouda check`** — validates frontmatter, filenames, and required Markdown sections across the collection. Exit 0 clean, 1 on any error. Each error carries a code (E000–E010) and a fix hint.
-- **`arkouda new "<title>" [--id <slug>] [--status proposed|accepted|superseded|deprecated|rejected] [--abstract "<one-line summary of the decision>"]`** — scaffold a new ADR with today's date. Default id is a slug from the title. The abstract should summarize *what was decided*, not just the topic.
+- **`arkouda check`** — validates OKF conformance, frontmatter, concept ids, and required Markdown sections across the collection. Exit 0 clean, 1 on any error. Each diagnostic carries a code (E000–E014) and a fix hint. Warnings never fail the run.
+- **`arkouda new "<title>" [--id <slug>] [--status proposed|accepted|superseded|deprecated|rejected] [--description "<one-line summary of the decision>"]`** — scaffold a new ADR with today's date. Default id is a slug from the title. The description should summarize *what was decided*, not just the topic. Refreshes `index.md` if the bundle has one.
+- **`arkouda index`** — regenerate each bundle's `index.md`, an OKF §6 listing of every concept grouped by status. Read it to see the whole collection at a glance without opening any file.
 
 Global flags: `--dir <path>` (also `ADR_DIR`), `-q/--quiet`. Run `arkouda --help` or `arkouda <subcommand> --help` for the authoritative surface.
 
@@ -67,7 +71,7 @@ There is intentionally no `search` subcommand and no full-file `show` — `rg`/`
 `arkouda list` is the path source — it's where the ADRs *actually* are in this repo.
 
 ```sh
-# Orient in an unfamiliar repo
+# Orient in an unfamiliar repo — the index is the cheapest overview
 arkouda list -l && arkouda check
 
 # Paths of all ADRs (for piping)
@@ -92,7 +96,7 @@ arkouda list -l | awk '$2=="accepted" {print $4}'
 arkouda list -l | awk '{print $2}' | sort | uniq -c
 
 # Most recent N decisions
-arkouda list -l --sort date | tail -10
+arkouda list -l --sort timestamp | tail -10
 
 # Stream every Decision section in the collection
 arkouda list | while read f; do
@@ -103,7 +107,7 @@ arkouda list | while read f; do
 done
 
 # Scaffold a new decision and validate it
-arkouda new "Adopt Tracing" --abstract "Use OpenTelemetry across services."
+arkouda new "Adopt Tracing" --description "Use OpenTelemetry across services."
 arkouda check
 ```
 
@@ -120,7 +124,7 @@ arkouda decision <id>                      # read the meat of a hit
 **After deciding** — capture it:
 
 ```sh
-arkouda new "<Title>" --abstract "<one-line summary of what was decided>"
+arkouda new "<Title>" --description "<one-line summary of what was decided>"
 # arkouda new prints the path it created — open that file and fill in
 # Context, Decision, Consequences
 arkouda check
@@ -129,24 +133,26 @@ arkouda check
 **Supersede an existing decision**
 
 1. Resolve the path: `path=$(arkouda list | grep -F /<old-id>.md)`.
-2. `cat "$path"` to see the current frontmatter, then edit: change `status: "superseded"` and add `superseded_by: "<new-id>"`.
+2. `cat "$path"` to see the current frontmatter, then edit: change `status: superseded` and add `superseded_by: <new-id>`.
 3. `arkouda new "<New Title>"` for the replacement.
 4. `arkouda check` to confirm both files still validate.
 
 ## ADR shape (what `check` enforces)
 
+The frontmatter is [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) v0.1. There is no `id` key — the concept id *is* the filename stem.
+
 ```markdown
 ---
-id: "use-postgres"            # lowercase slug, must match filename stem
-title: "Use Postgres"
-abstract: "One-line summary of the decision (what was decided)."
-status: "proposed"            # proposed | accepted | superseded | deprecated | rejected
-date: "2026-05-06"            # ISO YYYY-MM-DD, must be a real date
-deciders: []                  # optional
-tags: []                      # optional
+type: Architecture Decision Record   # required by OKF; always this value
+title: Use Postgres
+description: One-line summary of the decision (what was decided).
+tags: []                             # optional
+timestamp: 2026-05-06                # ISO 8601 date or datetime
+status: proposed                     # proposed | accepted | superseded | deprecated | rejected
+deciders: []                         # optional
 ---
 
-# Use Postgres                # H1 must equal title
+# Use Postgres                       # H1 must equal title
 
 ## Status
 
@@ -165,20 +171,25 @@ What we decided.
 What follows from the decision.
 ```
 
-Required keys: `id`, `title`, `abstract`, `status`, `date`. Required body sections (case-insensitive H2): `Status`, `Context`, `Decision`, `Consequences` — from [Michael Nygard's ADR template](https://github.com/joelparkerhenderson/architecture-decision-record/tree/main/locales/en/templates/decision-record-template-by-michael-nygard). Filename stem must equal the frontmatter `id`.
+Required keys: `type`, `title`, `description`, `status`, `timestamp`. Required body sections (case-insensitive H2): `Status`, `Context`, `Decision`, `Consequences` — from [Michael Nygard's ADR template](https://github.com/joelparkerhenderson/architecture-decision-record/tree/main/locales/en/templates/decision-record-template-by-michael-nygard). `status`, `deciders`, and `superseded_by` are OKF producer extensions; `type`, `title`, `description`, `tags`, and `timestamp` are OKF's own fields.
 
 ## When `check` reports errors
 
 Each diagnostic has a code; the hint usually tells you the exact fix.
 
+- **E000** unparseable file → the file must start with YAML frontmatter delimited by `---`.
 - **E001/E002** missing or empty required field → add the field with a real value.
 - **E003** invalid status → use one of the five valid values.
-- **E004** id is not a lowercase slug → letters, digits, single hyphens.
-- **E005** filename does not match id → rename to `<id>.md`.
-- **E006** invalid date → ISO `YYYY-MM-DD` for a real calendar day.
+- **E004** concept id is not a lowercase slug → rename the file (and any parent dirs) to letters, digits, single hyphens.
+- **E005** wrong `type` → set `type: Architecture Decision Record`.
+- **E006** invalid timestamp → ISO 8601, e.g. `2026-05-06` or `2026-05-06T14:30:00Z`.
 - **E007/E008** missing or wrong H1 → first heading must be `# <title>`.
 - **E009** missing required section → add the named `## Section` heading.
-- **E010** duplicate id across files → make ids unique.
+- **E010** duplicate concept id across files → make ids unique.
+- **E011** `index.md` frontmatter → only a bundle-root index may have it, and only `okf_version`.
+- **E012** `log.md` heading is not `## YYYY-MM-DD`.
+- **E013** *(warning)* bundle declares an OKF version arkouda doesn't implement.
+- **E014** *(warning)* `index.md` is stale → run `arkouda index`.
 
 ## What not to do
 
@@ -186,5 +197,7 @@ Each diagnostic has a code; the hint usually tells you the exact fix.
 - Don't hardcode `docs/adr/` in pipelines — different repos put ADRs elsewhere via `.arkoudarc.toml`. Use `arkouda list` to discover the actual paths.
 - Don't write or edit ADR files freehand without running `arkouda check` afterwards — the schema is strict.
 - Don't invent statuses outside the five valid values; downstream tooling depends on them.
-- Don't change a published ADR's `id` after creation; create a new ADR and mark the old one `superseded` instead.
+- Don't rename a published ADR's file after creation — the filename *is* its concept id, and links to it will break. Create a new ADR and mark the old one `superseded` instead.
+- Don't add an `id:` key to frontmatter; it was removed when arkouda moved to OKF. The concept id comes from the path.
+- Don't hand-edit `index.md` or `log.md` — `index.md` is generated by `arkouda index`, and both are reserved by OKF, never ADRs.
 - Don't commit ADRs whose `arkouda check` fails — CI is likely to enforce it.

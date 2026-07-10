@@ -29,7 +29,7 @@ pub fn run(args: &DecisionArgs, cli: &Cli) -> Result<i32> {
     let body = manifest
         .section(section)
         .ok_or_else(|| ArkoudaError::SectionNotFound {
-            id: manifest.frontmatter.display_id().to_owned(),
+            id: manifest.concept_id.clone(),
             section: section.to_owned(),
         })?;
     println!("{body}");

@@ -1,4 +1,4 @@
-//! List ADRs in the collection.
+//! List ADR concepts in the collection.
 
 use crate::adr::Manifest;
 use crate::cli::{Cli, ListArgs, SortBy};
@@ -20,26 +20,19 @@ pub fn run(args: &ListArgs, cli: &Cli) -> Result<i32> {
 fn sort_manifests(manifests: &mut [Manifest], sort: SortBy) {
     manifests.sort_by(|left, right| {
         let primary = match sort {
-            SortBy::Id => left
-                .frontmatter
-                .display_id()
-                .cmp(right.frontmatter.display_id()),
-            SortBy::Date => (
-                left.frontmatter.display_date(),
-                left.frontmatter.display_id(),
+            SortBy::Id => left.concept_id.cmp(&right.concept_id),
+            SortBy::Timestamp => (
+                left.frontmatter.display_timestamp(),
+                left.concept_id.as_str(),
             )
                 .cmp(&(
-                    right.frontmatter.display_date(),
-                    right.frontmatter.display_id(),
+                    right.frontmatter.display_timestamp(),
+                    right.concept_id.as_str(),
                 )),
-            SortBy::Status => (
-                left.frontmatter.display_status(),
-                left.frontmatter.display_id(),
-            )
-                .cmp(&(
-                    right.frontmatter.display_status(),
-                    right.frontmatter.display_id(),
-                )),
+            SortBy::Status => (left.frontmatter.display_status(), left.concept_id.as_str()).cmp(&(
+                right.frontmatter.display_status(),
+                right.concept_id.as_str(),
+            )),
         };
         primary.then_with(|| left.path.cmp(&right.path))
     });
@@ -54,12 +47,17 @@ fn print_paths(manifests: &[Manifest]) {
 fn print_long(manifests: &[Manifest]) {
     let id_width = manifests
         .iter()
-        .map(|manifest| manifest.frontmatter.display_id().len())
+        .map(|manifest| manifest.concept_id.len())
         .max()
         .unwrap_or(0);
     let status_width = manifests
         .iter()
         .map(|manifest| manifest.frontmatter.display_status().len())
+        .max()
+        .unwrap_or(0);
+    let timestamp_width = manifests
+        .iter()
+        .map(|manifest| manifest.frontmatter.display_timestamp().len())
         .max()
         .unwrap_or(0);
     let path_width = manifests
@@ -71,15 +69,15 @@ fn print_long(manifests: &[Manifest]) {
     for manifest in manifests {
         let frontmatter = &manifest.frontmatter;
         let title = frontmatter.display_title();
-        let abstract_text = truncate(frontmatter.display_abstract(), 90);
+        let description = truncate(frontmatter.display_description(), 90);
         println!(
-            "{:<id_width$}  {:<status_width$}  {:<10}  {:<path_width$}  {} — {}",
-            frontmatter.display_id(),
+            "{:<id_width$}  {:<status_width$}  {:<timestamp_width$}  {:<path_width$}  {} — {}",
+            manifest.concept_id,
             frontmatter.display_status(),
-            frontmatter.display_date(),
+            frontmatter.display_timestamp(),
             manifest.path.display(),
             title,
-            abstract_text,
+            description,
         );
     }
 }

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING.** ADRs are now stored as an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) (OKF) v0.1 knowledge bundle. Frontmatter adopts OKF's vocabulary: a new required `type: Architecture Decision Record`, `abstract` → `description`, `date` → `timestamp` (ISO 8601 date *or* datetime). `status`, `deciders`, and `superseded_by` are retained as OKF producer extensions. No compatibility shim is provided — `arkouda check` fails on the old schema, which is how you find the files to migrate. See [`docs/adr/adopt-okf.md`](docs/adr/adopt-okf.md).
+- **BREAKING.** The `id` frontmatter key is removed. A concept's id is its path within the bundle without the `.md` suffix (OKF §2), so `security/mtls.md` has the id `security/mtls`. `arkouda decision <id>` accepts the concept id, the filename stem, or the filename, as before.
+- **BREAKING.** `arkouda new --abstract` is now `--description`.
+- **BREAKING.** `arkouda list --sort date` is now `--sort timestamp`; the `-l` table's third column is the timestamp.
+- ADR discovery recurses into subdirectories. `index.md` and `log.md` are reserved by OKF §3.1 and are never treated as ADRs.
+- `arkouda check` prints `[E001]: message` rather than `[E001] : message`, and `[E012] 3: message` for diagnostics that carry a line number.
+
+### Added
+
+- `arkouda index` — regenerate each bundle's `index.md` (OKF §6): every concept grouped under its status heading with its one-line description, for progressive disclosure. The bundle-root index declares `okf_version: "0.1"`, the one place OKF §11 permits frontmatter in an index. `arkouda new` refreshes an existing index but never creates one, since OKF §9 makes indexes optional.
+- Validation of OKF reserved files: `E011` (an `index.md` carries frontmatter where OKF does not permit it) and `E012` (a `log.md` heading is not an ISO 8601 `YYYY-MM-DD` date).
+- Two warnings, which report but never fail the run, per OKF's permissive-consumption rule (§9): `E013` (the bundle declares an OKF version arkouda does not implement) and `E014` (`index.md` is stale — run `arkouda index`).
+- `E005` now flags a `type` that is not `Architecture Decision Record`, replacing the old "filename stem does not match id" check that the removal of `id` made vacuous.
+
 ## [0.4.0] - 2026-06-12
 
 ### Added

@@ -34,11 +34,14 @@ pub enum Command {
     /// Print one ADR's `## Decision` section by id; `--section` to pick another.
     Decision(DecisionArgs),
 
-    /// Validate ADR frontmatter, filenames, and Markdown structure.
+    /// Validate OKF conformance, ADR frontmatter, and Markdown structure.
     Check,
 
     /// Create a new ADR from the standard template.
     New(NewArgs),
+
+    /// Regenerate each bundle's `index.md` directory listing.
+    Index,
 
     /// Manage the arkouda installation.
     #[command(name = "self")]
@@ -52,8 +55,8 @@ pub struct ListArgs {
     #[arg(long, default_value = "id", value_enum)]
     pub sort: SortBy,
 
-    /// Long form: print `ID STATUS DATE PATH TITLE` columns instead of just
-    /// paths. Headerless either way.
+    /// Long form: print `ID STATUS TIMESTAMP PATH TITLE` columns instead of
+    /// just paths. Headerless either way.
     #[arg(short = 'l', long)]
     pub long: bool,
 }
@@ -61,7 +64,7 @@ pub struct ListArgs {
 /// Arguments for the `decision` command.
 #[derive(clap::Args)]
 pub struct DecisionArgs {
-    /// ADR id, filename stem, or filename.
+    /// ADR concept id, filename stem, or filename.
     pub id: String,
 
     /// Print this `## <name>` section instead of `## Decision`. Errors if the
@@ -77,7 +80,8 @@ pub struct NewArgs {
     /// ADR title.
     pub title: String,
 
-    /// Explicit ADR id. Defaults to a slug generated from the title.
+    /// Explicit concept id, used as the filename stem. Defaults to a slug
+    /// generated from the title.
     #[arg(long)]
     pub id: Option<String>,
 
@@ -87,8 +91,8 @@ pub struct NewArgs {
 
     /// One-line summary of the decision (what was decided, not just the
     /// topic). Defaults to a TODO placeholder.
-    #[arg(long = "abstract")]
-    pub abstract_text: Option<String>,
+    #[arg(long)]
+    pub description: Option<String>,
 }
 
 /// Arguments for the `self` command.
@@ -134,10 +138,10 @@ pub enum Shell {
 #[derive(ValueEnum, Clone, Copy, Debug)]
 #[value(rename_all = "kebab-case")]
 pub enum SortBy {
-    /// Sort by ADR id.
+    /// Sort by concept id.
     Id,
-    /// Sort by ADR date.
-    Date,
+    /// Sort by decision timestamp.
+    Timestamp,
     /// Sort by ADR status.
     Status,
 }

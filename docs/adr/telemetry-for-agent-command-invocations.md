@@ -1,15 +1,15 @@
 ---
-id: telemetry-for-agent-command-invocations
+type: Architecture Decision Record
 title: Telemetry for agent command invocations
-abstract: Record arkouda command invocations to a local JSONL file, on by default, attributing each event to the agent (or human) that ran it.
-status: accepted
-date: 2026-05-20
-deciders: []
+description: Record arkouda command invocations to a local JSONL file, on by default, attributing each event to the agent (or human) that ran it.
 tags:
   - telemetry
   - observability
   - agents
   - cli
+timestamp: 2026-05-20
+status: accepted
+deciders: []
 ---
 
 # Telemetry for agent command invocations

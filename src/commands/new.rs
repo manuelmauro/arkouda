@@ -1,11 +1,12 @@
-//! Create a new ADR from the standard template.
+//! Create a new ADR concept from the standard template.
 
-use crate::adr::{AdrStatus, is_valid_id, slugify};
+use crate::adr::{ADR_TYPE, AdrStatus, index, is_valid_id, slugify};
 use crate::cli::{Cli, NewArgs};
 use crate::error::{ArkoudaError, Result};
 use chrono::Local;
 use colored::Colorize;
 use serde::Serialize;
+use std::path::{Path, PathBuf};
 
 /// Run the new command.
 pub fn run(args: &NewArgs, cli: &Cli) -> Result<i32> {
@@ -28,12 +29,12 @@ pub fn run(args: &NewArgs, cli: &Cli) -> Result<i32> {
         });
     }
 
-    let date = Local::now().date_naive().format("%Y-%m-%d").to_string();
-    let abstract_text = args
-        .abstract_text
+    let timestamp = Local::now().date_naive().format("%Y-%m-%d").to_string();
+    let description = args
+        .description
         .as_deref()
-        .unwrap_or("TODO: summarize the decision in one or two sentences.");
-    let content = render_template(&id, &args.title, abstract_text, args.status, &date);
+        .unwrap_or("TODO: summarize the decision in one sentence.");
+    let content = render_template(&args.title, description, args.status, &timestamp);
 
     std::fs::write(&path, content)?;
 
@@ -46,36 +47,54 @@ pub fn run(args: &NewArgs, cli: &Cli) -> Result<i32> {
         );
     }
 
+    refresh_index(target_dir, cli)?;
+
     Ok(0)
 }
 
-#[derive(Serialize)]
-struct TemplateFrontmatter<'a> {
-    id: &'a str,
-    title: &'a str,
-    #[serde(rename = "abstract")]
-    abstract_text: &'a str,
-    status: AdrStatus,
-    date: &'a str,
-    deciders: &'a [String],
-    tags: &'a [String],
+/// Keep a bundle's `index.md` in step with the concept just added. A bundle
+/// without an index stays without one — OKF §9 makes the index optional, so
+/// creating one unasked would be a surprise.
+fn refresh_index(target_dir: &Path, cli: &Cli) -> Result<()> {
+    let root = super::bundle_root(target_dir);
+    if !root.join("index.md").exists() {
+        return Ok(());
+    }
+
+    let dirs = [PathBuf::from(target_dir)];
+    for bundle in super::load_bundles(&dirs)?.iter().filter(|b| b.complete) {
+        let path = super::index::write(&bundle.root, &index::render(&bundle.manifests))?;
+        if !cli.quiet {
+            println!("{} Refreshed {}", "✓".green().bold(), path.display());
+        }
+    }
+
+    Ok(())
 }
 
-fn render_template(
-    id: &str,
-    title: &str,
-    abstract_text: &str,
+/// OKF frontmatter: the spec's required `type` and recommended fields first,
+/// then the ADR-specific extensions.
+#[derive(Serialize)]
+struct TemplateFrontmatter<'a> {
+    #[serde(rename = "type")]
+    concept_type: &'a str,
+    title: &'a str,
+    description: &'a str,
+    tags: &'a [String],
+    timestamp: &'a str,
     status: AdrStatus,
-    date: &str,
-) -> String {
+    deciders: &'a [String],
+}
+
+fn render_template(title: &str, description: &str, status: AdrStatus, timestamp: &str) -> String {
     let frontmatter = TemplateFrontmatter {
-        id,
+        concept_type: ADR_TYPE,
         title,
-        abstract_text,
-        status,
-        date,
-        deciders: &[],
+        description,
         tags: &[],
+        timestamp,
+        status,
+        deciders: &[],
     };
     let yaml = serde_yaml::to_string(&frontmatter)
         .expect("frontmatter serialization is infallible for static fields");
@@ -104,4 +123,33 @@ TODO: describe the positive, negative, and neutral consequences.
 ",
         label = status.label(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::adr::{Manifest, validator};
+
+    #[test]
+    fn the_template_validates_and_declares_the_okf_type() {
+        let rendered = render_template(
+            "Use Postgres",
+            "Store relational data in Postgres.",
+            AdrStatus::Proposed,
+            "2026-05-06",
+        );
+
+        let manifest = Manifest::parse_content(
+            Path::new("docs/adr/use-postgres.md"),
+            Path::new("docs/adr"),
+            &rendered,
+        )
+        .expect("template parses");
+
+        assert_eq!(manifest.frontmatter.concept_type.as_deref(), Some(ADR_TYPE));
+        assert_eq!(manifest.concept_id, "use-postgres");
+
+        let result = validator::validate(&manifest);
+        assert!(result.errors.is_empty(), "{:#?}", result.errors);
+    }
 }

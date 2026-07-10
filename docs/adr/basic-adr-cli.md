@@ -1,14 +1,14 @@
 ---
-id: "basic-adr-cli"
-title: "Provide a basic ADR navigation and validation CLI"
-abstract: "Introduce a small CLI to navigate ADRs and validate their YAML metadata and Markdown structure."
-status: "accepted"
-date: "2026-05-06"
-deciders: []
+type: Architecture Decision Record
+title: Provide a basic ADR navigation and validation CLI
+description: Introduce a small CLI to navigate ADRs and validate their YAML metadata and Markdown structure.
 tags:
   - cli
   - adr
   - documentation
+timestamp: 2026-05-06
+status: accepted
+deciders: []
 ---
 
 # Provide a basic ADR navigation and validation CLI

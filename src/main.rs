@@ -44,6 +44,7 @@ fn run(cli: &Cli) -> Result<i32> {
         Command::Decision(args) => commands::decision::run(args, cli),
         Command::Check => commands::check::run(cli),
         Command::New(args) => commands::new::run(args, cli),
+        Command::Index => commands::index::run(cli),
         Command::SelfCmd(args) => match &args.command {
             SelfCommand::Completions(args) => commands::completions::run(args),
         },

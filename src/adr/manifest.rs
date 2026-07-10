@@ -1,14 +1,18 @@
-//! ADR manifest parsing.
+//! ADR concept document parsing.
 
+use crate::adr::concept_id;
 use crate::adr::frontmatter::Frontmatter;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-/// A parsed ADR Markdown file.
+/// A parsed ADR concept document.
 #[derive(Debug, Clone)]
 pub struct Manifest {
-    /// Path to the ADR Markdown file.
+    /// Path to the concept's Markdown file.
     pub path: PathBuf,
+
+    /// OKF concept id: the bundle-relative path without the `.md` suffix.
+    pub concept_id: String,
 
     /// Parsed YAML frontmatter.
     pub frontmatter: Frontmatter,
@@ -20,11 +24,11 @@ pub struct Manifest {
     pub body_start_line: usize,
 }
 
-/// Errors that can occur when parsing an ADR Markdown file.
+/// Errors that can occur when parsing an ADR concept document.
 #[derive(Debug, Error)]
 pub enum ManifestError {
     /// The file does not start with a YAML frontmatter delimiter.
-    #[error("ADR must start with YAML frontmatter (---)")]
+    #[error("concept must start with YAML frontmatter (---)")]
     MissingFrontmatter,
 
     /// The YAML frontmatter is not properly closed.
@@ -41,10 +45,10 @@ pub enum ManifestError {
 }
 
 impl Manifest {
-    /// Parse an ADR Markdown file.
-    pub fn parse(path: &Path) -> Result<Self, ManifestError> {
+    /// Parse an ADR concept document sitting inside `bundle_root`.
+    pub fn parse(path: &Path, bundle_root: &Path) -> Result<Self, ManifestError> {
         let content = std::fs::read_to_string(path)?;
-        Self::parse_content(path, &content)
+        Self::parse_content(path, bundle_root, &content)
     }
 
     /// Return the body of a `## <name>` Markdown section, with surrounding
@@ -69,8 +73,12 @@ impl Manifest {
         Some(body.join("\n").trim().to_owned())
     }
 
-    /// Parse ADR content from a string.
-    pub fn parse_content(path: &Path, content: &str) -> Result<Self, ManifestError> {
+    /// Parse concept content from a string.
+    pub fn parse_content(
+        path: &Path,
+        bundle_root: &Path,
+        content: &str,
+    ) -> Result<Self, ManifestError> {
         let (frontmatter_raw, body, body_start_line) = split_content(content)?;
         let frontmatter = if frontmatter_raw.trim().is_empty() {
             Frontmatter::default()
@@ -80,6 +88,7 @@ impl Manifest {
 
         Ok(Self {
             path: path.to_path_buf(),
+            concept_id: concept_id(path, bundle_root),
             frontmatter,
             body,
             body_start_line,
@@ -87,7 +96,9 @@ impl Manifest {
     }
 }
 
-fn split_content(content: &str) -> Result<(String, String, usize), ManifestError> {
+/// Split a Markdown file into its frontmatter block, body, and the one-based
+/// line number on which the body starts.
+pub(crate) fn split_content(content: &str) -> Result<(String, String, usize), ManifestError> {
     let content = content.strip_prefix('\u{feff}').unwrap_or(content);
     let lines: Vec<&str> = content.lines().collect();
 
@@ -113,51 +124,91 @@ fn split_content(content: &str) -> Result<(String, String, usize), ManifestError
 mod tests {
     use super::*;
 
+    const BUNDLE: &str = "docs/adr";
+
     #[test]
     fn parses_valid_manifest() {
         let content = "---
-id: basic-adr-cli
+type: Architecture Decision Record
 title: Basic ADR CLI
-abstract: Navigate ADRs
-status: proposed
-date: 2026-05-06
+description: Navigate ADRs
+status: accepted
+timestamp: 2026-05-06
 ---
 
 # Basic ADR CLI
 
 ## Status
 
-Proposed
+Accepted
 ";
-        let manifest = Manifest::parse_content(Path::new("docs/adr/basic-adr-cli.md"), content)
-            .expect("valid manifest");
+        let manifest = Manifest::parse_content(
+            Path::new("docs/adr/basic-adr-cli.md"),
+            Path::new(BUNDLE),
+            content,
+        )
+        .expect("valid manifest");
 
-        assert_eq!(manifest.frontmatter.id.as_deref(), Some("basic-adr-cli"));
+        assert_eq!(
+            manifest.frontmatter.concept_type.as_deref(),
+            Some("Architecture Decision Record")
+        );
+        assert_eq!(manifest.concept_id, "basic-adr-cli");
         assert!(manifest.body.contains("# Basic ADR CLI"));
+    }
+
+    #[test]
+    fn nested_concepts_get_a_path_shaped_id() {
+        let content = "---\ntype: Architecture Decision Record\n---\n\n# X\n";
+        let manifest = Manifest::parse_content(
+            Path::new("docs/adr/security/mtls.md"),
+            Path::new(BUNDLE),
+            content,
+        )
+        .expect("valid manifest");
+        assert_eq!(manifest.concept_id, "security/mtls");
+    }
+
+    #[test]
+    fn unknown_frontmatter_keys_are_tolerated() {
+        let content = "---
+type: Architecture Decision Record
+title: X
+some_producer_extension: 42
+---
+
+# X
+";
+        let manifest =
+            Manifest::parse_content(Path::new("docs/adr/x.md"), Path::new(BUNDLE), content)
+                .expect("unknown keys must not be rejected");
+        assert_eq!(manifest.frontmatter.title.as_deref(), Some("X"));
     }
 
     #[test]
     fn rejects_missing_frontmatter() {
         let content = "# No frontmatter here";
-        let result = Manifest::parse_content(Path::new("docs/adr/nope.md"), content);
+        let result =
+            Manifest::parse_content(Path::new("docs/adr/nope.md"), Path::new(BUNDLE), content);
         assert!(matches!(result, Err(ManifestError::MissingFrontmatter)));
     }
 
     #[test]
     fn rejects_unclosed_frontmatter() {
-        let content = "---\nid: nope\n# no closing marker";
-        let result = Manifest::parse_content(Path::new("docs/adr/nope.md"), content);
+        let content = "---\ntype: Architecture Decision Record\n# no closing marker";
+        let result =
+            Manifest::parse_content(Path::new("docs/adr/nope.md"), Path::new(BUNDLE), content);
         assert!(matches!(result, Err(ManifestError::UnclosedFrontmatter)));
     }
 
     #[test]
     fn extracts_named_section() {
         let content = "---
-id: x
+type: Architecture Decision Record
 title: X
-abstract: x
+description: x
 status: proposed
-date: 2026-05-06
+timestamp: 2026-05-06
 ---
 
 # X
@@ -176,7 +227,9 @@ It scales.
 
 Faster.
 ";
-        let manifest = Manifest::parse_content(Path::new("x.md"), content).expect("valid manifest");
+        let manifest =
+            Manifest::parse_content(Path::new("docs/adr/x.md"), Path::new(BUNDLE), content)
+                .expect("valid manifest");
         assert_eq!(
             manifest.section("decision").as_deref(),
             Some("We will adopt X.\n\nIt scales.")
