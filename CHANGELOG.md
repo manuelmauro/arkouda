@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING.** `arkouda list --sort date` is now `--sort timestamp`; the `-l` table's third column is the timestamp.
 - ADR discovery recurses into subdirectories. `index.md` and `log.md` are reserved by OKF §3.1 and are never treated as ADRs.
 - `arkouda check` prints `[E001]: message` rather than `[E001] : message`, and `[E012] 3: message` for diagnostics that carry a line number.
+- `arkouda new` no longer fails when it cannot refresh the bundle's `index.md`. Refreshing re-parses every concept, so an unrelated malformed ADR used to turn a successful creation into exit code 1. The refresh failure is now a warning on stderr and the command exits 0; `arkouda check` reports the resulting stale index as `E014`.
 
 ### Added
 

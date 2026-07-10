@@ -55,8 +55,8 @@ pub struct ListArgs {
     #[arg(long, default_value = "id", value_enum)]
     pub sort: SortBy,
 
-    /// Long form: print `ID STATUS TIMESTAMP PATH TITLE` columns instead of
-    /// just paths. Headerless either way.
+    /// Long form: print `ID STATUS TIMESTAMP PATH TITLE — DESCRIPTION`
+    /// instead of just paths. Headerless either way.
     #[arg(short = 'l', long)]
     pub long: bool,
 }

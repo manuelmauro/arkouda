@@ -47,7 +47,22 @@ pub fn run(args: &NewArgs, cli: &Cli) -> Result<i32> {
         );
     }
 
-    refresh_index(target_dir, cli)?;
+    // The ADR is on disk; the command has succeeded. Refreshing the index
+    // re-parses the whole bundle, so an unrelated malformed concept must not
+    // turn a successful creation into a failing exit code. A stale index is
+    // only ever a warning (E014), and `arkouda check` will say so.
+    if let Err(error) = refresh_index(target_dir, cli)
+        && !cli.quiet
+    {
+        eprintln!(
+            "{} index not refreshed: {error}",
+            "warning:".yellow().bold()
+        );
+        eprintln!(
+            "    {} Run `arkouda index` once the bundle validates.",
+            "hint:".cyan()
+        );
+    }
 
     Ok(0)
 }
@@ -129,6 +144,77 @@ TODO: describe the positive, negative, and neutral consequences.
 mod tests {
     use super::*;
     use crate::adr::{Manifest, validator};
+    use crate::cli::Command;
+    use clap::Parser;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("arkouda-new-{name}"));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create dir");
+        root
+    }
+
+    /// Parse a `new` invocation and run it against `dir`.
+    fn run_new(dir: &Path, title: &str) -> Result<i32> {
+        let cli = Cli::parse_from([
+            "arkouda",
+            "--quiet",
+            "--dir",
+            dir.to_str().expect("utf-8 path"),
+            "new",
+            title,
+        ]);
+        let Command::New(args) = &cli.command else {
+            unreachable!("parsed a `new` invocation")
+        };
+        run(args, &cli)
+    }
+
+    #[test]
+    fn a_failed_index_refresh_does_not_fail_the_creation() {
+        let root = temp_dir("broken-sibling");
+        // An unrelated malformed concept makes `refresh_index` fail, because
+        // refreshing re-parses every concept in the bundle.
+        std::fs::write(root.join("broken.md"), "no frontmatter here\n").expect("write");
+        std::fs::write(root.join("index.md"), "---\nokf_version: \"0.1\"\n---\n").expect("write");
+
+        let exit = run_new(&root, "Use Postgres").expect("creation must not error");
+
+        assert_eq!(exit, 0, "the ADR was created; the exit code must say so");
+        assert!(root.join("use-postgres.md").is_file());
+
+        std::fs::remove_dir_all(&root).expect("cleanup");
+    }
+
+    #[test]
+    fn creation_refreshes_an_existing_index() {
+        let root = temp_dir("refresh");
+        std::fs::write(root.join("index.md"), "---\nokf_version: \"0.1\"\n---\n").expect("write");
+
+        assert_eq!(run_new(&root, "Use Postgres").expect("create"), 0);
+
+        let index = std::fs::read_to_string(root.join("index.md")).expect("read index");
+        assert!(
+            index.contains("* [Use Postgres](use-postgres.md)"),
+            "{index}"
+        );
+
+        std::fs::remove_dir_all(&root).expect("cleanup");
+    }
+
+    #[test]
+    fn creation_never_conjures_an_index() {
+        let root = temp_dir("no-index");
+
+        assert_eq!(run_new(&root, "Use Postgres").expect("create"), 0);
+
+        assert!(
+            !root.join("index.md").exists(),
+            "OKF makes the index optional; `new` must not create one unasked"
+        );
+
+        std::fs::remove_dir_all(&root).expect("cleanup");
+    }
 
     #[test]
     fn the_template_validates_and_declares_the_okf_type() {
