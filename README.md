@@ -185,7 +185,9 @@ The skill is repo-agnostic: it discovers ADR paths via `arkouda list` rather tha
 
 ## Acknowledgements
 
-The ADR body schema (`## Status`, `## Context`, `## Decision`, `## Consequences`) follows [Michael Nygard's template](https://github.com/joelparkerhenderson/architecture-decision-record/tree/main/locales/en/templates/decision-record-template-by-michael-nygard) — the de-facto standard for Architecture Decision Records. The frontmatter and bundle structure follow the [Open Knowledge Format][okf] v0.1, published by Google Cloud Platform. Arkouda layers ADR-specific validation on top of both.
+The ADR body schema (`## Status`, `## Context`, `## Decision`, `## Consequences`) follows [Michael Nygard's template](https://github.com/joelparkerhenderson/architecture-decision-record/tree/main/locales/en/templates/decision-record-template-by-michael-nygard) — the de-facto standard for Architecture Decision Records. The frontmatter and bundle structure follow the [Open Knowledge Format][okf] v0.1, published by Google Cloud Platform under the Apache 2.0 licence. Arkouda layers ADR-specific validation on top of both.
+
+A verbatim copy of the OKF specification arkouda implements is vendored at [`docs/okf/SPEC.md`](docs/okf/SPEC.md), pinned to the upstream commit it was taken from — see [`docs/okf/README.md`](docs/okf/README.md) for provenance and checksums.
 
 ## License
 

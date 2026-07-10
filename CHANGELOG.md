@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Validation of OKF reserved files: `E011` (an `index.md` carries frontmatter where OKF does not permit it) and `E012` (a `log.md` heading is not an ISO 8601 `YYYY-MM-DD` date).
 - Two warnings, which report but never fail the run, per OKF's permissive-consumption rule (§9): `E013` (the bundle declares an OKF version arkouda does not implement) and `E014` (`index.md` is stale — run `arkouda index`).
 - `E005` now flags a `type` that is not `Architecture Decision Record`, replacing the old "filename stem does not match id" check that the removal of `id` made vacuous.
+- Vendored a verbatim copy of the OKF v0.1 specification at [`docs/okf/SPEC.md`](docs/okf/SPEC.md), together with its Apache 2.0 licence and a provenance note pinning the upstream commit and SHA-256 checksums. The exact text arkouda implements is now in-tree, readable offline, and diffable when upstream moves.
 
 ## [0.4.0] - 2026-06-12
 
