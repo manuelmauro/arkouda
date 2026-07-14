@@ -1,13 +1,13 @@
 ---
-id: defer-to-unix-tools
+type: Architecture Decision Record
 title: Defer to Unix tools
-abstract: Arkouda exposes structured access to the ADR collection but defers content search and other shell-friendly operations to standard Unix tools.
-status: accepted
-date: 2026-05-06
-deciders: []
+description: Arkouda exposes structured access to the ADR collection but defers content search and other shell-friendly operations to standard Unix tools.
 tags:
   - philosophy
   - cli
+timestamp: 2026-05-06
+status: accepted
+deciders: []
 ---
 
 # Defer to Unix tools

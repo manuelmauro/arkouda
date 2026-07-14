@@ -1,11 +1,11 @@
 ---
-id: ls-style-list-and-decision
+type: Architecture Decision Record
 title: ls-style list and a decision subcommand
-abstract: Make arkouda list headerless and ls-style (paths by default, -l for the table) and replace show with arkouda decision <id>, defaulting to the decision section.
-status: accepted
-date: 2026-05-07
-deciders: []
+description: Make arkouda list headerless and ls-style (paths by default, -l for the table) and replace show with arkouda decision <id>, defaulting to the decision section.
 tags: []
+timestamp: 2026-05-07
+status: accepted
+deciders: []
 ---
 
 # ls-style list and a decision subcommand

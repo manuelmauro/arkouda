@@ -1,5 +1,6 @@
-# Directories where arkouda looks for ADRs. Relative paths resolve against
+# Directories where arkouda looks for ADRs. Each is the root of an OKF
+# knowledge bundle and is scanned recursively. Relative paths resolve against
 # the location of this file, so the same config works from any subdirectory.
-# In a monorepo, list every ADR directory you want aggregated, e.g.
+# In a monorepo, list every ADR bundle you want aggregated, e.g.
 #   dirs = ["docs/adr", "services/billing/docs/adr"]
 dirs = ["docs/adr"]

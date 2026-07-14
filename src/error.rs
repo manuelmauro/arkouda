@@ -50,6 +50,16 @@ pub enum ArkoudaError {
         path: String,
     },
 
+    /// An operation that rewrites the bundle was asked to run against a single
+    /// concept file rather than the bundle root.
+    #[error(
+        "Cannot regenerate the index for {path} from a single file; point --dir at the bundle directory"
+    )]
+    PartialBundle {
+        /// Bundle root path.
+        path: String,
+    },
+
     /// Parsing an ADR manifest failed.
     #[error("{path}: {source}")]
     Manifest {

@@ -274,6 +274,7 @@ impl Command {
             Self::Decision(_) => "decision",
             Self::Check => "check",
             Self::New(_) => "new",
+            Self::Index => "index",
             Self::SelfCmd(_) => "self",
         }
     }
@@ -362,8 +363,8 @@ mod tests {
     fn redacts_value_in_long_form_assignment() {
         assert_eq!(redact_token("--dir=docs/adr"), "--dir=<path>");
         assert_eq!(
-            redact_token("--abstract=Use Postgres"),
-            "--abstract=<title>"
+            redact_token("--description=Use Postgres"),
+            "--description=<title>"
         );
         assert_eq!(redact_token("--sort=id"), "--sort=id");
     }
