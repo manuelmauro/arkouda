@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-14
+
 ### Changed
 
 - **BREAKING.** ADRs are now stored as an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) (OKF) v0.1 knowledge bundle. Frontmatter adopts OKF's vocabulary: a new required `type: Architecture Decision Record`, `abstract` → `description`, `date` → `timestamp` (ISO 8601 date *or* datetime). `status`, `deciders`, and `superseded_by` are retained as OKF producer extensions. No compatibility shim is provided — `arkouda check` fails on the old schema, which is how you find the files to migrate. See [`docs/adr/adopt-okf.md`](docs/adr/adopt-okf.md).
@@ -98,6 +100,7 @@ Initial release.
 - Dual MIT/Apache-2.0 license.
 - Agent skills: `skills/arkouda` (how to use the CLI) and `skills/prepare-release` (how to cut a release).
 
+[0.5.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.5.0
 [0.4.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.4.0
 [0.3.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.3.0
 [0.2.1]: https://github.com/manuelmauro/arkouda/releases/tag/v0.2.1
