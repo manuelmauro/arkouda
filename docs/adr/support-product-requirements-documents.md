@@ -206,7 +206,7 @@ Uniform nesting beats conditional nesting. A single-type bundle pays one extra h
 - Two vocabularies means `arkouda list --sort status` orders within a type but interleaves across types. Sorting a mixed collection by status is now only meaningful with `--type`.
 - Apart from `Status`, the two types share no section headings, so `arkouda decision <id> --section <name>` takes a different set of names depending on what the concept is. An agent that guesses `--section context` on a PRD gets a `SectionNotFound` error rather than a near-miss. That is the intended failure — the alternative is a shared vocabulary that implies the documents answer the same question — but it does mean `--section` cannot be scripted across a mixed collection without branching on type, `--section status` excepted.
 - The module named `adr` becomes the module named `concept`, and `AdrStatus`, `ADR_TYPE`, and `ADR_DIR` are all named after one of two types. The env var stays `ADR_DIR` for compatibility; the internals get renamed.
-- **Prerequisite:** section handling must learn about fenced code blocks first. `check_required_sections` and `Manifest::section` both scan raw lines for a `## ` prefix, so a heading inside a ` ```markdown ` fence counts as a real section — an ADR carrying a template in a fence passes `check` without having the sections it appears to declare, and `decision` truncates its output at the fence. This ADR's own body demonstrates both: `arkouda decision support-product-requirements-documents` stops at the PRD template's first heading. Two built-in types make this acute, because documenting a type means showing its headings.
+- **Ordering constraint:** [parsing Markdown instead of scanning lines](parse-markdown-instead-of-scanning-lines.md) must land first. Documenting a second type means showing its headings, and while section handling scanned raw lines, a heading inside a fence counted as a real section — a concept carrying a template passed `check` without having the sections it appeared to declare, and `decision` truncated its output at the fence. This ADR's own body triggered both. That defect is fixed and recorded separately, so PRD support needs no further work there, but it cannot ship ahead of it.
 
 ### Neutral
 
@@ -247,9 +247,11 @@ Reusing `Context` alongside `Status` would let more `--section` names work acros
 
 [Figma's PRD template](https://coda.io/@yuhki/figmas-approach-to-product-requirement-docs) groups sections under three H1s — *Problem Alignment*, *Solution Alignment*, *Launch Readiness* — so the document's shape is a sequence of agreements rather than a bag of sections. It is the best structural idea in any template surveyed: you align on the problem before a solution exists.
 
-Two things rule it out. Mechanically, `Manifest::section` stops only at the next `## ` heading, so an intervening H1 is swallowed into the preceding section's body — `--section "goals & success"` would return `# Solution Alignment` as part of its answer. Adopting the shape means changing section extraction for every type.
+An earlier draft rejected it on two grounds, one of which no longer holds. Section extraction used to stop at the next `## ` heading, so an intervening H1 was swallowed into the preceding section's body and a grouped document could not be read back correctly. [Parsing Markdown instead of scanning lines](parse-markdown-instead-of-scanning-lines.md) removed that: sections now end at the next heading of the same or higher level, so Figma's shape extracts cleanly. **The mechanical objection is gone, and what follows is the whole of the case against.**
 
-More importantly, the phase sequence is what `status` already encodes. Figma expresses the lifecycle structurally because a Coda document has no typed status field; arkouda has one. Storing draft-review-approved in both the frontmatter and the heading tree is the redundancy [adopting OKF](adopt-okf.md) removed when it deleted `id`.
+The phase sequence is what `status` already encodes. Figma expresses the lifecycle structurally because a Coda document has no typed status field; arkouda has one. Storing draft-review-approved in both the frontmatter and the heading tree is the redundancy [adopting OKF](adopt-okf.md) removed when it deleted `id`.
+
+Grouping would also turn `ConceptType`'s required sections from a list into a tree, because "`## Problem` sits under `# Problem Alignment`" is a nesting constraint rather than a membership one. That complicates the descriptor, the `E009` diagnostic, and any future user-supplied template schema — in exchange for a structure whose information content is already in one frontmatter field.
 
 Figma's *Launch Checklist* is likewise left out: its rows are Figma's team topology (Support, Growth, PMM, Enterprise, Platform, Security), not anything general about products.
 
@@ -259,16 +261,17 @@ Figma's *Launch Checklist* is likewise left out: its rows are Figma's team topol
 [2] [Adopt the Open Knowledge Format](adopt-okf.md) — the migration that made a second concept type possible
 [3] [ls-style list and a decision subcommand](ls-style-list-and-decision.md) — the primary-section CLI contract this generalizes
 [4] [Defer to Unix tools](defer-to-unix-tools.md) — why `--type` is a filter rather than a new subcommand
-[5] [Michael Nygard's ADR template](https://github.com/joelparkerhenderson/architecture-decision-record/tree/main/locales/en/templates/decision-record-template-by-michael-nygard)
+[5] [Parse Markdown instead of scanning lines](parse-markdown-instead-of-scanning-lines.md) — the prerequisite this ADR uncovered, and the reason Figma's grouping is now rejected on design grounds alone
+[6] [Michael Nygard's ADR template](https://github.com/joelparkerhenderson/architecture-decision-record/tree/main/locales/en/templates/decision-record-template-by-michael-nygard)
 
 ### PRD templates surveyed
 
 The PRD section set above is drawn from these. `Problem`, `Requirements`, and `Success Metrics` appear in essentially all of them; `Non-Goals` appears in all but one.
 
-[6] [GitHub spec-kit feature specification template](https://github.com/github/spec-kit/blob/main/templates/spec-template.md) — the closest comparable: agent-native, plain Markdown, versioned in-repo. Mandates User Scenarios, Requirements, and Success Criteria; marks unresolved points `[NEEDS CLARIFICATION]`
-[7] [Kiro spec-driven development](https://kiro.dev/docs/specs/) — `requirements.md` / `design.md` / `tasks.md`, with acceptance criteria in [EARS](https://alistairmavin.com/ears/) notation
-[8] [Atlassian Product Requirements blueprint](https://confluence.atlassian.com/doc/product-requirements-blueprint-329975392.html) and [the accompanying guide](https://www.atlassian.com/blog/development/write-product-requirements-confluence) — source of `target_release` and `owner` as first-class properties, and of the document-status/delivery-status split this ADR deliberately collapses
-[9] [Figma's approach to PRDs](https://coda.io/@yuhki/figmas-approach-to-product-requirement-docs) — Problem Alignment / Solution Alignment / Launch Readiness; source of `Approach` and of `Decisions`, and the dissenting view on `Non-Goals`
-[10] [Shape Up, ch. 6: Write the Pitch](https://basecamp.com/shapeup/1.5-chapter-06) — Problem, Appetite, Solution, Rabbit Holes, No-Gos
-[11] [Lenny Rachitsky's product requirements template](https://www.atlassian.com/software/confluence/templates/lennys-product-requirements) — Description, Problem, Why, Success, Audience, What
-[12] [Amazon's Working Backwards PR/FAQ](https://workingbackwards.com/resources/working-backwards-pr-faq/) — the press-release-first alternative shape, not adopted
+[7] [GitHub spec-kit feature specification template](https://github.com/github/spec-kit/blob/main/templates/spec-template.md) — the closest comparable: agent-native, plain Markdown, versioned in-repo. Mandates User Scenarios, Requirements, and Success Criteria; marks unresolved points `[NEEDS CLARIFICATION]`
+[8] [Kiro spec-driven development](https://kiro.dev/docs/specs/) — `requirements.md` / `design.md` / `tasks.md`, with acceptance criteria in [EARS](https://alistairmavin.com/ears/) notation
+[9] [Atlassian Product Requirements blueprint](https://confluence.atlassian.com/doc/product-requirements-blueprint-329975392.html) and [the accompanying guide](https://www.atlassian.com/blog/development/write-product-requirements-confluence) — source of `target_release` and `owner` as first-class properties, and of the document-status/delivery-status split this ADR deliberately collapses
+[10] [Figma's approach to PRDs](https://coda.io/@yuhki/figmas-approach-to-product-requirement-docs) — Problem Alignment / Solution Alignment / Launch Readiness; source of `Approach` and of `Decisions`, and the dissenting view on `Non-Goals`
+[11] [Shape Up, ch. 6: Write the Pitch](https://basecamp.com/shapeup/1.5-chapter-06) — Problem, Appetite, Solution, Rabbit Holes, No-Gos
+[12] [Lenny Rachitsky's product requirements template](https://www.atlassian.com/software/confluence/templates/lennys-product-requirements) — Description, Problem, Why, Success, Audience, What
+[13] [Amazon's Working Backwards PR/FAQ](https://workingbackwards.com/resources/working-backwards-pr-faq/) — the press-release-first alternative shape, not adopted
