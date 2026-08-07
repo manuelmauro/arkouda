@@ -2,6 +2,7 @@
 
 use crate::adr::concept_id;
 use crate::adr::frontmatter::Frontmatter;
+use crate::adr::markdown;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -52,25 +53,11 @@ impl Manifest {
     }
 
     /// Return the body of a `## <name>` Markdown section, with surrounding
-    /// blank lines trimmed. Matching is case-insensitive and ignores trailing
-    /// `#` characters in the heading. Returns `None` if no such section exists.
+    /// blank lines trimmed. Matching is case-insensitive. The section ends at
+    /// the next heading of the same or higher level, and headings inside code
+    /// blocks are not headings. Returns `None` if no such section exists.
     pub fn section(&self, name: &str) -> Option<String> {
-        let target = name.trim().to_ascii_lowercase();
-        let mut lines = self.body.lines();
-
-        let found = lines.by_ref().any(|line| {
-            line.strip_prefix("## ")
-                .map(|heading| heading.trim().trim_end_matches('#').trim())
-                .is_some_and(|heading| heading.eq_ignore_ascii_case(&target))
-        });
-
-        if !found {
-            return None;
-        }
-
-        let body: Vec<&str> = lines.take_while(|line| !line.starts_with("## ")).collect();
-
-        Some(body.join("\n").trim().to_owned())
+        markdown::section(&self.body, name)
     }
 
     /// Parse concept content from a string.

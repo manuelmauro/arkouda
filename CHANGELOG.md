@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Markdown structure is determined by parsing the document rather than scanning lines for a `## ` prefix, fixing two defects. A heading inside a fenced or indented code block counted as a real heading, so an ADR whose only `## Decision` and `## Consequences` headings sat inside a fenced template passed `arkouda check` while missing both sections. And `arkouda decision` truncated its output at the first heading inside a fence. Setext headings (`Title` over `=====`) are now recognized. See [`docs/adr/parse-markdown-instead-of-scanning-lines.md`](docs/adr/parse-markdown-instead-of-scanning-lines.md).
+- Only document-level headings count as sections. A heading nested in a block quote or list item (`> ## Decision`) belongs to that container, so quoting a template no longer satisfies the requirement to have written one.
+- `arkouda decision` ends a section at the next heading of the same or higher level rather than at the next `##`, so an intervening `#` no longer lands in the preceding section's body and a nested `###` subsection is no longer excluded from it.
+
+### Changed
+
+- **Behaviour change on upgrade.** A concept whose required headings exist only inside a code fence validated before and now fails with `E009`. That is the fix working as intended, but it can turn a passing CI run red without the document having changed.
+
 ## [0.5.0] - 2026-07-14
 
 ### Changed
