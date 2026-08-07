@@ -20,11 +20,11 @@ Proposed
 
 ## Context
 
-Arkouda's pitch is that an AI coding agent should check what was already decided before deciding, and capture the outcome afterwards. Decisions are only half of what an agent needs. The other half is what the software is *supposed to do* — the requirements the decisions serve. Today an agent that wants that context has to read source, tests, and commit messages and infer it.
+Arkouda's pitch is that an AI coding agent should check what was already decided before deciding, and capture the outcome afterwards. Decisions are only half of what an agent needs. The other half is what the software is _supposed to do_ — the requirements the decisions serve. Today an agent that wants that context has to read source, tests, and commit messages and infer it.
 
 Product Requirements Documents are the established artefact for that, and they have the same properties that made ADRs worth tooling: Markdown, YAML frontmatter, one file per topic, versioned in the repo, written by humans and agents alike, read far more often than written.
 
-[Adopting OKF](adopt-okf.md) already did most of the work of making a second document type possible. An arkouda ADR directory is an OKF v0.1 knowledge bundle, and OKF's central abstraction is the *concept*: a Markdown document whose only required frontmatter key is `type`. OKF does not say a bundle holds one type — `type` is per-concept precisely so a bundle can hold many. Everything arkouda does with a bundle today (recursive discovery, concept ids from paths, reserved `index.md`/`log.md`, frontmatter parsing that tolerates unknown keys, `index.md` generation) is already type-agnostic.
+[Adopting OKF](adopt-okf.md) already did most of the work of making a second document type possible. An arkouda ADR directory is an OKF v0.1 knowledge bundle, and OKF's central abstraction is the _concept_: a Markdown document whose only required frontmatter key is `type`. OKF does not say a bundle holds one type — `type` is per-concept precisely so a bundle can hold many. Everything arkouda does with a bundle today (recursive discovery, concept ids from paths, reserved `index.md`/`log.md`, frontmatter parsing that tolerates unknown keys, `index.md` generation) is already type-agnostic.
 
 What is not type-agnostic is arkouda's own layer on top, and it is hardcoded in four places:
 
@@ -37,7 +37,7 @@ So the question is not whether OKF permits a second type. It is whether arkouda 
 
 A parallel tool is unattractive: discovery, config resolution, frontmatter parsing, `index.md` generation, id validation, the `E000`–`E014` diagnostic vocabulary, and the agent skill would all be duplicated, and an agent would have to learn two CLIs to answer "what are we building and why did we build it that way". Those are the same question.
 
-Arkouda is pre-1.0. It has made exactly one breaking schema change so far, and this is the moment to decide whether the tool is *an ADR tool* or *an OKF tool with opinionated built-in types*.
+Arkouda is pre-1.0. It has made exactly one breaking schema change so far, and this is the moment to decide whether the tool is _an ADR tool_ or _an OKF tool with opinionated built-in types_.
 
 ## Decision
 
@@ -47,14 +47,14 @@ Generalize arkouda into a concept-type-aware OKF tool, and ship **Product Requir
 
 Introduce a `ConceptType` descriptor in `src/adr/` (renamed to `src/concept/`) that carries everything currently hardcoded:
 
-| Field              | ADR                                                  | PRD                                                                 |
-| ------------------ | ---------------------------------------------------- | ------------------------------------------------------------------- |
-| `slug` (CLI name)  | `adr`                                                | `prd`                                                                |
-| OKF `type`         | `Architecture Decision Record`                       | `Product Requirements Document`                                      |
-| statuses           | `proposed`, `accepted`, `superseded`, `deprecated`, `rejected` | `draft`, `in-review`, `approved`, `shipped`, `abandoned`, `superseded` |
-| required sections  | `Status`, `Context`, `Decision`, `Consequences`      | `Status`, `Context`, `Requirements`, `Success Metrics`               |
-| primary section    | `Decision`                                           | `Requirements`                                                       |
-| default directory  | `docs/adr`                                           | `docs/prd`                                                           |
+| Field             | ADR                                                            | PRD                                                                    |
+| ----------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `slug` (CLI name) | `adr`                                                          | `prd`                                                                  |
+| OKF `type`        | `Architecture Decision Record`                                 | `Product Requirements Document`                                        |
+| statuses          | `proposed`, `accepted`, `superseded`, `deprecated`, `rejected` | `draft`, `in-review`, `approved`, `shipped`, `abandoned`, `superseded` |
+| required sections | `Status`, `Context`, `Decision`, `Consequences`                | `Status`, `Context`, `Requirements`, `Success Metrics`                 |
+| primary section   | `Decision`                                                     | `Requirements`                                                         |
+| default directory | `docs/adr`                                                     | `docs/prd`                                                             |
 
 The two descriptors are the only instances; types are **not** user-definable in this change (see Alternatives). Status order within a descriptor is lifecycle order, which is what `index.md` grouping and `--sort status` use.
 
@@ -69,13 +69,13 @@ title: Bulk ADR Import
 description: One-line summary of what is being built and for whom.
 tags: []
 timestamp: 2026-08-07
-status: draft                        # draft | in-review | approved | shipped | abandoned | superseded
-resource: https://github.com/org/repo/issues/42   # optional: the tracker item
-owner:                               # optional; PRD extension, mirrors `deciders`
+status: draft # draft | in-review | approved | shipped | abandoned | superseded
+resource: https://github.com/org/repo/issues/42 # optional: the tracker item
+owner: # optional; PRD extension, mirrors `deciders`
   - alice
 ---
 
-# Bulk ADR Import                    # H1 must equal title, as for ADRs
+# Bulk ADR Import
 
 ## Status
 
@@ -85,9 +85,9 @@ Draft
 
 The problem, who has it, and why now.
 
-## Goals                             # scaffolded, not required
+## Goals
 
-## Non-Goals                         # scaffolded, not required
+## Non-Goals
 
 ## Requirements
 
@@ -97,8 +97,10 @@ What the software must do. The primary section.
 
 How we will know it worked.
 
-## Open Questions                    # scaffolded, not required
+## Open Questions
 ```
+
+The H1 must equal `title`, as for ADRs.
 
 Four required sections, mirroring Nygard's four in count and intent: the situation (`Context`), the substance (`Requirements`), and the falsifiable claim about the outcome (`Success Metrics`), plus `Status` so lifecycle lives in the body as well as the frontmatter. `Goals`, `Non-Goals`, and `Open Questions` are scaffolded by `arkouda new` but not validated — the same treatment arkouda's own ADRs give `Alternatives Considered` and `Citations`. Requiring them would make the cheapest useful PRD expensive to write; scaffolding them makes writing them the default.
 
@@ -110,7 +112,7 @@ Three additions, no new subcommands:
 
 - **`arkouda new "<title>" [--type adr|prd]`** — defaults to `adr`. Selects the template, the type string, the status vocabulary, and the target directory.
 - **`arkouda list [--type adr|prd]`** — filters. The `-l` columns stay exactly as they are: `ID STATUS TIMESTAMP PATH TITLE — DESCRIPTION`. Inserting a type column would break every documented `awk '$2=="accepted"'` pipeline, and the path column already discriminates under the default per-type directories.
-- **`arkouda decision <id>`** — prints the concept's *primary section*: `## Decision` for an ADR, `## Requirements` for a PRD. `--section <name>` is unchanged and already type-neutral.
+- **`arkouda decision <id>`** — prints the concept's _primary section_: `## Decision` for an ADR, `## Requirements` for a PRD. `--section <name>` is unchanged and already type-neutral.
 
 `check` and `index` gain no flags. `--status` on `new` stops being a clap `ValueEnum` and becomes a string validated against the resolved type's vocabulary.
 
@@ -141,8 +143,8 @@ A bundle may hold mixed types. Type comes from frontmatter, never from the path 
 `arkouda check` validates every concept against the descriptor its `type` names. **No new diagnostic codes**; three change meaning to be type-relative:
 
 - `E005` — `type` is not one of the types arkouda knows (was: `type` is not `Architecture Decision Record`).
-- `E003` — `status` is not in *this type's* vocabulary. The hint lists that type's values.
-- `E009` — a section required by *this type* is missing.
+- `E003` — `status` is not in _this type's_ vocabulary. The hint lists that type's values.
+- `E009` — a section required by _this type_ is missing.
 
 A concept with an unknown `type` is an `E005` error rather than a skipped file. Arkouda manages the bundles it is pointed at; silently ignoring a document it cannot check would hide exactly the drift `check` exists to catch.
 
@@ -184,7 +186,7 @@ Cleanest separation, zero risk to the ADR path. It also duplicates discovery, co
 
 ### Make concept types fully user-definable in `.arkoudarc.toml`
 
-Let a project declare any `type` with its own sections and statuses. Strictly more powerful, and the descriptor introduced here is the data model that would enable it later. Rejected for now because arkouda's value is that the schema is *known*: an agent that has read the skill knows what a PRD looks like without reading a config file, and a user-defined type has no template, no default sections, and no shared vocabulary across repos. Two curated types beat n bespoke ones until there is demand.
+Let a project declare any `type` with its own sections and statuses. Strictly more powerful, and the descriptor introduced here is the data model that would enable it later. Rejected for now because arkouda's value is that the schema is _known_: an agent that has read the skill knows what a PRD looks like without reading a config file, and a user-defined type has no template, no default sections, and no shared vocabulary across repos. Two curated types beat n bespoke ones until there is demand.
 
 ### Treat a PRD as an ADR with `tags: [prd]`
 
