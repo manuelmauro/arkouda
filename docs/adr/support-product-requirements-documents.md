@@ -52,11 +52,11 @@ Introduce a `ConceptType` descriptor in `src/adr/` (renamed to `src/concept/`) t
 | `slug` (CLI name) | `adr`                                                          | `prd`                                                                  |
 | OKF `type`        | `Architecture Decision Record`                                 | `Product Requirements Document`                                        |
 | statuses          | `proposed`, `accepted`, `superseded`, `deprecated`, `rejected` | `draft`, `in-review`, `approved`, `shipped`, `abandoned`, `superseded` |
-| required sections | `Status`, `Context`, `Decision`, `Consequences`                | `Status`, `Context`, `Requirements`, `Success Metrics`                 |
+| required sections | `Status`, `Context`, `Decision`, `Consequences`                | `Status`, `Problem`, `Requirements`, `Non-Goals`, `Success Metrics`    |
 | primary section   | `Decision`                                                     | `Requirements`                                                         |
 | default directory | `docs/adr`                                                     | `docs/prd`                                                             |
 
-The two descriptors are the only instances; types are **not** user-definable in this change (see Alternatives). Status order within a descriptor is lifecycle order, which is what `index.md` grouping and `--sort status` use.
+The two descriptors are the only instances, and types are **not** user-definable in this change — but the descriptor is deliberately the shape a user-supplied template would deserialize into, so bringing your own type later is a config parser rather than a redesign (see Alternatives). Status order within a descriptor is lifecycle order, which is what `index.md` grouping and `--sort status` use.
 
 Required frontmatter keys are the same for both types — `type`, `title`, `description`, `status`, `timestamp` — because they are OKF's own recommended set, not an ADR invention. A PRD's `description` summarizes what is being built, as an ADR's summarizes what was decided.
 
@@ -73,6 +73,7 @@ status: draft # draft | in-review | approved | shipped | abandoned | superseded
 resource: https://github.com/org/repo/issues/42 # optional: the tracker item
 owner: # optional; PRD extension, mirrors `deciders`
   - alice
+target_release: 2026-09-01 # optional; PRD extension
 ---
 
 # Bulk ADR Import
@@ -81,30 +82,48 @@ owner: # optional; PRD extension, mirrors `deciders`
 
 Draft
 
-## Context
+## Problem
 
-The problem, who has it, and why now.
+Who has it, why it matters, and why now.
 
-## Goals
+## Approach
 
-## Non-Goals
+The shape of the solution, in a paragraph.
 
 ## Requirements
 
 What the software must do. The primary section.
 
+## Non-Goals
+
+What this explicitly does not cover.
+
 ## Success Metrics
 
 How we will know it worked.
+
+## Decisions
+
+- [adopt-okf](../adr/adopt-okf.md) — the bundle format this builds on
 
 ## Open Questions
 ```
 
 The H1 must equal `title`, as for ADRs.
 
-Four required sections, mirroring Nygard's four in count and intent: the situation (`Context`), the substance (`Requirements`), and the falsifiable claim about the outcome (`Success Metrics`), plus `Status` so lifecycle lives in the body as well as the frontmatter. `Goals`, `Non-Goals`, and `Open Questions` are scaffolded by `arkouda new` but not validated — the same treatment arkouda's own ADRs give `Alternatives Considered` and `Citations`. Requiring them would make the cheapest useful PRD expensive to write; scaffolding them makes writing them the default.
+**A PRD borrows the ADR's section vocabulary only where the two documents genuinely agree.** `Status` is shared: it is a lifecycle marker rather than decision-specific language, both types carry the same fact in frontmatter, and mirroring it in the body is a convention arkouda already applies uniformly. Everything else is PRD-native. In particular there is no `## Context` — that is a decision record's word for what every product template surveyed calls the *Problem*, and borrowing it would make the ADR vocabulary look like arkouda's universal one, which is the assumption this ADR exists to remove.
 
-`owner` is a new optional producer extension (OKF §4.1), parallel to `deciders`. `resource` already exists in the frontmatter struct and is where a PRD's tracker link goes. `superseded_by` works unchanged for both types.
+Five required sections: the lifecycle (`Status`), the motivation (`Problem`), the substance (`Requirements`), the boundary (`Non-Goals`), and the falsifiable claim about the outcome (`Success Metrics`). `Approach`, `Decisions`, and `Open Questions` are scaffolded by `arkouda new` but not validated — the same treatment arkouda's own ADRs give `Alternatives Considered` and `Citations`. Requiring them would make the cheapest useful PRD expensive to write; scaffolding them makes writing them the default.
+
+`Non-Goals` is required rather than scaffolded because it is the section most consistently skipped and most expensive to omit, and because a validator can enforce a heading but not a prompt. Shape Up gives it a named ingredient (*No-Gos*) and Atlassian's blueprint closes on *Out of Scope*; Figma's template is the dissent, folding the question into instructional prose under *The Problem* and *Key Features*. Prose is exactly what `arkouda check` cannot see.
+
+`Decisions` is where a PRD links the ADRs that shaped it, by concept id. It is the reason both types belong in one tool: the requirement and the decision that serves it are one `rg` apart, and neither restates the other.
+
+Arkouda validates document *structure*, not requirement *content*. It will not enforce `FR-###`/`SC-###` numbering, `P1`/`P2` priorities, or [EARS](https://alistairmavin.com/ears/) acceptance-criteria syntax (`WHEN <event> THE SYSTEM SHALL <behavior>`) the way spec-driven tools like GitHub's spec-kit and Kiro do. Those are worth adopting inside a `## Requirements` section and are out of scope for a validator whose contract is headings and frontmatter.
+
+`owner` and `target_release` are new optional producer extensions (OKF §4.1); `owner` parallels `deciders`, and `target_release` is the one scheduling field Atlassian's blueprint treats as first-class. `resource` already exists in the frontmatter struct and is where a PRD's tracker link goes. `superseded_by` works unchanged for both types.
+
+The status vocabulary deliberately blends document state (`draft`, `in-review`, `approved`) with delivery state (`shipped`, `abandoned`), which Atlassian's blueprint splits across two fields. One field is the right call here: arkouda groups `index.md` by status and sorts by it, and two lifecycle axes would need two groupings. The ADR vocabulary already blends the same way — `proposed` and `accepted` describe the document, `deprecated` describes the world.
 
 ### CLI surface
 
@@ -159,7 +178,7 @@ Uniform nesting beats conditional nesting. A single-type bundle pays one extra h
 ### Positive
 
 - An agent can answer "what are we building" and "why is it built this way" from one CLI, one config file, one diagnostic vocabulary, and one skill — and `arkouda list | xargs rg -i <topic>` searches both at once.
-- The hardcoded type, status list, section list, and template collapse into one descriptor, so a third type (RFC, runbook, postmortem) becomes a data change rather than a refactor.
+- The hardcoded type, status list, section list, and template collapse into one descriptor, so a third type (RFC, runbook, postmortem) becomes a data change rather than a refactor — and user-supplied templates become a config parser over a shape that already exists.
 - PRDs get the property that made ADRs worth tooling: a strict schema with machine-readable diagnostics, so CI can gate on a PRD being well-formed and an agent gets an actionable error instead of a shrug.
 - Arkouda becomes closer to what OKF describes — a consumer of typed concepts — rather than a tool that reads OKF bundles but only believes in one type.
 
@@ -169,7 +188,9 @@ Uniform nesting beats conditional nesting. A single-type bundle pays one extra h
 - `arkouda decision` is a misleading name when the concept is a PRD. The alternative was a subcommand per type, which does not scale.
 - Every existing `index.md` regenerates with a new heading structure — a one-line diff of churn per bundle, and a stale-index warning until someone runs `arkouda index`.
 - Two vocabularies means `arkouda list --sort status` orders within a type but interleaves across types. Sorting a mixed collection by status is now only meaningful with `--type`.
+- Apart from `Status`, the two types share no section headings, so `arkouda decision <id> --section <name>` takes a different set of names depending on what the concept is. An agent that guesses `--section context` on a PRD gets a `SectionNotFound` error rather than a near-miss. That is the intended failure — the alternative is a shared vocabulary that implies the documents answer the same question — but it does mean `--section` cannot be scripted across a mixed collection without branching on type, `--section status` excepted.
 - The module named `adr` becomes the module named `concept`, and `AdrStatus`, `ADR_TYPE`, and `ADR_DIR` are all named after one of two types. The env var stays `ADR_DIR` for compatibility; the internals get renamed.
+- **Prerequisite:** section handling must learn about fenced code blocks first. `check_required_sections` and `Manifest::section` both scan raw lines for a `## ` prefix, so a heading inside a ` ```markdown ` fence counts as a real section — an ADR carrying a template in a fence passes `check` without having the sections it appears to declare, and `decision` truncates its output at the fence. This ADR's own body demonstrates both: `arkouda decision support-product-requirements-documents` stops at the PRD template's first heading. Two built-in types make this acute, because documenting a type means showing its headings.
 
 ### Neutral
 
@@ -184,9 +205,11 @@ Uniform nesting beats conditional nesting. A single-type bundle pays one extra h
 
 Cleanest separation, zero risk to the ADR path. It also duplicates discovery, config, frontmatter parsing, index generation, and the diagnostic vocabulary — and forces an agent to learn two tools to answer one question. The shared machinery is most of the code; the type-specific part is a template and two lists.
 
-### Make concept types fully user-definable in `.arkoudarc.toml`
+### Make concept types user-definable now
 
-Let a project declare any `type` with its own sections and statuses. Strictly more powerful, and the descriptor introduced here is the data model that would enable it later. Rejected for now because arkouda's value is that the schema is _known_: an agent that has read the skill knows what a PRD looks like without reading a config file, and a user-defined type has no template, no default sections, and no shared vocabulary across repos. Two curated types beat n bespoke ones until there is demand.
+Let a project declare any `type` in `.arkoudarc.toml` with its own sections, statuses, and template. **Deferred rather than rejected** — this is the likely next step, and `ConceptType` is deliberately shaped to be what a user-supplied template deserializes into, so adding it later is a parser and a config key rather than a redesign.
+
+Not now, for two reasons. Arkouda's value is that the schema is _known_: an agent that has read the skill knows what a PRD looks like without reading a project's config, and that property is worth keeping until there is a concrete second consumer. And the questions a bring-your-own-template feature has to answer — where templates live, whether they are shareable across repos, what happens to a concept whose type is no longer declared, whether `check` should fail or skip an unknown type — are answered better against two real built-in types than against zero. Shipping ADR and PRD first is what makes the general version designable.
 
 ### Treat a PRD as an ADR with `tags: [prd]`
 
@@ -200,6 +223,20 @@ More informative in a mixed bundle, and it would break `awk '$2=="accepted"'` �
 
 Byte-identical output for every existing bundle and no regeneration churn. It also gives consumers two shapes to parse for the same file, and the churn is one command run once.
 
+### Give the PRD the whole ADR section vocabulary
+
+Reusing `Context` alongside `Status` would let more `--section` names work across both types and would keep the templates visibly related. It would also assert something false: a PRD's problem statement is not a decision record's context, and the templates surveyed agree — Figma, Lenny's, and Shape Up all call it *Problem*. `Status` is the one word the two documents genuinely share, because it names a lifecycle rather than a kind of content.
+
+### Adopt Figma's phase grouping
+
+[Figma's PRD template](https://coda.io/@yuhki/figmas-approach-to-product-requirement-docs) groups sections under three H1s — *Problem Alignment*, *Solution Alignment*, *Launch Readiness* — so the document's shape is a sequence of agreements rather than a bag of sections. It is the best structural idea in any template surveyed: you align on the problem before a solution exists.
+
+Two things rule it out. Mechanically, `Manifest::section` stops only at the next `## ` heading, so an intervening H1 is swallowed into the preceding section's body — `--section "goals & success"` would return `# Solution Alignment` as part of its answer. Adopting the shape means changing section extraction for every type.
+
+More importantly, the phase sequence is what `status` already encodes. Figma expresses the lifecycle structurally because a Coda document has no typed status field; arkouda has one. Storing draft-review-approved in both the frontmatter and the heading tree is the redundancy [adopting OKF](adopt-okf.md) removed when it deleted `id`.
+
+Figma's *Launch Checklist* is likewise left out: its rows are Figma's team topology (Support, Growth, PMM, Enterprise, Platform, Security), not anything general about products.
+
 ## Citations
 
 [1] [Open Knowledge Format v0.1 specification](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) — §4.1 producer extensions, §6 index, §9 permissive consumption
@@ -207,3 +244,15 @@ Byte-identical output for every existing bundle and no regeneration churn. It al
 [3] [ls-style list and a decision subcommand](ls-style-list-and-decision.md) — the primary-section CLI contract this generalizes
 [4] [Defer to Unix tools](defer-to-unix-tools.md) — why `--type` is a filter rather than a new subcommand
 [5] [Michael Nygard's ADR template](https://github.com/joelparkerhenderson/architecture-decision-record/tree/main/locales/en/templates/decision-record-template-by-michael-nygard)
+
+### PRD templates surveyed
+
+The PRD section set above is drawn from these. `Problem`, `Requirements`, and `Success Metrics` appear in essentially all of them; `Non-Goals` appears in all but one.
+
+[6] [GitHub spec-kit feature specification template](https://github.com/github/spec-kit/blob/main/templates/spec-template.md) — the closest comparable: agent-native, plain Markdown, versioned in-repo. Mandates User Scenarios, Requirements, and Success Criteria; marks unresolved points `[NEEDS CLARIFICATION]`
+[7] [Kiro spec-driven development](https://kiro.dev/docs/specs/) — `requirements.md` / `design.md` / `tasks.md`, with acceptance criteria in [EARS](https://alistairmavin.com/ears/) notation
+[8] [Atlassian Product Requirements blueprint](https://confluence.atlassian.com/doc/product-requirements-blueprint-329975392.html) and [the accompanying guide](https://www.atlassian.com/blog/development/write-product-requirements-confluence) — source of `target_release` and `owner` as first-class properties, and of the document-status/delivery-status split this ADR deliberately collapses
+[9] [Figma's approach to PRDs](https://coda.io/@yuhki/figmas-approach-to-product-requirement-docs) — Problem Alignment / Solution Alignment / Launch Readiness; source of `Approach` and of `Decisions`, and the dissenting view on `Non-Goals`
+[10] [Shape Up, ch. 6: Write the Pitch](https://basecamp.com/shapeup/1.5-chapter-06) — Problem, Appetite, Solution, Rabbit Holes, No-Gos
+[11] [Lenny Rachitsky's product requirements template](https://www.atlassian.com/software/confluence/templates/lennys-product-requirements) — Description, Problem, Why, Success, Audience, What
+[12] [Amazon's Working Backwards PR/FAQ](https://workingbackwards.com/resources/working-backwards-pr-faq/) — the press-release-first alternative shape, not adopted
