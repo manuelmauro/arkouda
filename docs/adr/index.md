@@ -2,6 +2,10 @@
 okf_version: "0.1"
 ---
 
+# Proposed
+
+* [Support Product Requirements Documents](support-product-requirements-documents.md) - Generalize arkouda from an ADR-only tool into a concept-type-aware OKF tool, adding Product Requirements Documents as a second built-in concept type.
+
 # Accepted
 
 * [Adopt the Open Knowledge Format](adopt-okf.md) - Store ADRs as an OKF v0.1 knowledge bundle, replacing arkouda's bespoke frontmatter schema with OKF's type/title/description/timestamp fields.
