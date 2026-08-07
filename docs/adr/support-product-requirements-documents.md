@@ -138,15 +138,29 @@ The status vocabulary deliberately blends document state (`draft`, `in-review`, 
 
 ### CLI surface
 
-Three additions, no new subcommands:
+The subcommand count stays at five. Two of them change shape.
 
 - **`arkouda new "<title>" [--type adr|prd]`** — defaults to `adr`. Selects the template, the type string, the status vocabulary, and the target directory.
-- **`arkouda list [--type adr|prd]`** — filters. The `-l` columns stay exactly as they are: `ID STATUS TIMESTAMP PATH TITLE — DESCRIPTION`. Inserting a type column would break every documented `awk '$2=="accepted"'` pipeline, and the path column already discriminates under the default per-type directories.
-- **`arkouda decision <id>`** — prints the concept's _primary section_: `## Decision` for an ADR, `## Requirements` for a PRD. `--section <name>` is unchanged and already type-neutral.
+- **`arkouda list [--type adr|prd]`** — filters, and `-l` gains a type column: `ID TYPE STATUS TIMESTAMP PATH TITLE — DESCRIPTION`.
+- **`arkouda section <id> [<name>]`** — replaces `arkouda decision`. With no `<name>`, prints the concept type's primary section: `## Decision` for an ADR, `## Requirements` for a PRD. With one, prints that section.
 
 `check` and `index` gain no flags. `--status` on `new` stops being a clap `ValueEnum` and becomes a string validated against the resolved type's vocabulary.
 
-Keeping the subcommand named `decision` while it may print a PRD's requirements is a deliberate wart: it keeps the surface at five subcommands and breaks nothing, and the ADR case dominates. [The decision-centric CLI shape](ls-style-list-and-decision.md) is unchanged — the body of a concept, for arkouda's purposes, is still its one section that matters.
+#### Why `-l` grows a column
+
+The type is the one fact about a mixed collection that nothing else reveals. It cannot be inferred from the path — this ADR puts type in frontmatter precisely so a bundle may hold both — and `arkouda list -l` is the command the agent skill reaches for first in an unfamiliar repo, which is exactly when the type is unknown. Withholding it there to protect a column index is the wrong trade.
+
+It does break `awk '$2=="accepted"'`, which appears once in the README and three times in the skill; those move to `$3`, and `{print $4}` to `{print $5}`. Both files are updated with the implementation. This is not a new kind of break: v0.5.0 already redefined this table's third column from `date` to `timestamp` and shipped it as a documented breaking change. A pre-1.0 tool that has moved these columns before should not treat them as frozen now, particularly when `arkouda list` without `-l` — the actual pipeline surface, one path per line — is untouched.
+
+#### Why `decision` is renamed
+
+`arkouda decision <prd-id>` printing a requirements section is not a cosmetic wart. Arkouda's primary consumer is an agent, and a command that announces its output as a decision invites that output to be recorded as one. With user-definable types on the horizon, naming the universal read command after one built-in type's section only gets worse.
+
+Renaming also states what the command actually is. [The decision-centric shape](ls-style-list-and-decision.md) named it after the ADR section that mattered; what it does is extract a named section correctly, which — since [Markdown is parsed rather than scanned](parse-markdown-instead-of-scanning-lines.md) — is something a shell pipeline cannot do. An `awk '/^## Decision/{f=1;next} /^## /{f=0} f'` recipe stops at the first heading inside a fenced code block: on this ADR it returns 41 lines where the parser returns 146. That is what earns the subcommand under [defer to Unix tools](defer-to-unix-tools.md), and it is worth being explicit that the justification is recent. Before the parser landed, arkouda's implementation *was* that `awk` line, and the command was id resolution wrapped around something the shell did equally badly.
+
+The section name moves from `--section <name>` to an optional positional, because `arkouda section <id> --section <name>` reads like a stutter. No `decision` alias is kept: an alias would preserve exactly the name this rename exists to remove.
+
+**This revises part of [ls-style list and a decision subcommand](ls-style-list-and-decision.md)**, which is `accepted`. Its list decision stands unchanged; its naming of the section command does not. Arkouda's schema has no way to express partial supersession — `superseded_by` is whole-document — so that ADR keeps its status and this paragraph is the record.
 
 ### Configuration
 
@@ -164,7 +178,7 @@ adr = ["docs/adr"]
 prd = ["docs/prd"]
 ```
 
-Both parse into one internal model — a type-to-roots map, plus the union used for search. `list`, `check`, and `decision` aggregate over the union exactly as they do now; `new` writes into the first root for the resolved type. With nothing configured, the defaults are `adr → docs/adr` and `prd → docs/prd`. `--dir`/`ADR_DIR` still override everything for a single invocation.
+Both parse into one internal model — a type-to-roots map, plus the union used for search. `list`, `check`, and `section` aggregate over the union exactly as they do now; `new` writes into the first root for the resolved type. With nothing configured, the defaults are `adr → docs/adr` and `prd → docs/prd`. `--dir`/`ADR_DIR` still override everything for a single invocation.
 
 A bundle may hold mixed types. Type comes from frontmatter, never from the path — the typed `dirs` table is a default write target and a search scope, not a schema.
 
@@ -201,13 +215,13 @@ Uniform nesting beats conditional nesting. A single-type bundle pays one extra h
 ### Negative
 
 - `--status` loses its static completion values, because valid statuses now depend on `--type`. Shell completions will offer nothing for it until completions learn to be type-aware.
-- `arkouda decision` is a misleading name when the concept is a PRD. The alternative was a subcommand per type, which does not scale.
+- **Two breaking CLI changes.** `arkouda decision <id> [--section <name>]` becomes `arkouda section <id> [<name>]` with no alias, and `list -l` gains a column, shifting `$2`–`$4` to `$3`–`$5`. Every script, README example, and skill snippet touching either must be updated in the same release. Both are the kind of break a pre-1.0 tool should take now rather than carry, but they are breaks, and they land in one version.
 - Every existing `index.md` regenerates with a new heading structure — a one-line diff of churn per bundle, and a stale-index warning until someone runs `arkouda index`.
 - `arkouda list --sort status` compares status strings, so a mixed collection interleaves two vocabularies in one alphabetical run. Sorting by status is only meaningful alongside `--type`.
 - Arkouda's `status` extension is on a collision course with OKF v0.2, which promotes `status` to a spec field with the values `draft`, `stable`, and `deprecated`. Arkouda implements v0.1, where `status` is unclaimed, so nothing breaks today — but this ADR adds a second status vocabulary to a key upstream now defines differently, which makes the eventual v0.2 migration harder. That migration needs its own ADR either way.
-- Apart from `Status`, the two types share no section headings, so `arkouda decision <id> --section <name>` takes a different set of names depending on what the concept is. An agent that guesses `--section context` on a PRD gets a `SectionNotFound` error rather than a near-miss. That is the intended failure — the alternative is a shared vocabulary that implies the documents answer the same question — but it does mean `--section` cannot be scripted across a mixed collection without branching on type, `--section status` excepted.
+- Apart from `Status`, the two types share no section headings, so `arkouda section <id> <name>` takes a different set of names depending on what the concept is. An agent that guesses `context` on a PRD gets a `SectionNotFound` error rather than a near-miss. That is the intended failure — the alternative is a shared vocabulary implying the documents answer the same question — but a named section cannot be scripted across a mixed collection without branching on type, `status` excepted. Omitting the name sidesteps this entirely, which is the argument for the per-type default.
 - The module named `adr` becomes the module named `concept`, and `AdrStatus`, `ADR_TYPE`, and `ADR_DIR` are all named after one of two types. The env var stays `ADR_DIR` for compatibility; the internals get renamed.
-- **Ordering constraint:** [parsing Markdown instead of scanning lines](parse-markdown-instead-of-scanning-lines.md) must land first. Documenting a second type means showing its headings, and while section handling scanned raw lines, a heading inside a fence counted as a real section — a concept carrying a template passed `check` without having the sections it appeared to declare, and `decision` truncated its output at the fence. This ADR's own body triggered both. That defect is fixed and recorded separately, so PRD support needs no further work there, but it cannot ship ahead of it.
+- **Ordering constraint:** [parsing Markdown instead of scanning lines](parse-markdown-instead-of-scanning-lines.md) must land first. Documenting a second type means showing its headings, and while section handling scanned raw lines, a heading inside a fence counted as a real section — a concept carrying a template passed `check` without having the sections it appeared to declare, and the section command truncated its output at the fence. This ADR's own body triggered both. That defect is fixed and recorded separately, so PRD support needs no further work there, but it cannot ship ahead of it.
 
 ### Neutral
 
@@ -232,9 +246,13 @@ Not now, for two reasons. Arkouda's value is that the schema is _known_: an agen
 
 Zero code change. It also means `arkouda check` validates a requirements document against Nygard's sections, `arkouda new` scaffolds the wrong template, `status: accepted` has to stand in for `shipped`, and `type` — the one field OKF requires — lies to every other OKF consumer. The whole point of a strict schema is lost when one type is used to smuggle another.
 
-### Add a type column to `list -l`
+### Keep `list -l` columns frozen and rely on `--type` alone
 
-More informative in a mixed bundle, and it would break `awk '$2=="accepted"'` — a pipeline shape the README, the skill, and any agent that has read either depend on. `--type` filtering gives the same information without moving a column.
+An earlier revision of this ADR chose this, on the grounds that moving a column breaks `awk '$2=="accepted"'` and that the path column discriminates under the default per-type directories.
+
+Both grounds were wrong. The path argument contradicts this ADR's own rule that type comes from frontmatter so a bundle may hold both — it cannot simultaneously be true that type is not a function of location and that location reveals type. And the compatibility argument is not one this project has ever honoured: v0.5.0 redefined the same table's third column and shipped it as a documented break.
+
+Filtering is not a substitute either. `--type` answers "show me the PRDs", which requires already knowing there are PRDs. The column answers "what is in this collection", which is the question `arkouda list -l` exists to answer.
 
 ### Keep `index.md` flat when a bundle holds one type
 
@@ -260,8 +278,8 @@ Figma's *Launch Checklist* is likewise left out: its rows are Figma's team topol
 
 [1] [Open Knowledge Format v0.1 specification](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/ee67a5ca27044ebe7c38385f5b6cffc2305a9c1a/okf/SPEC.md) — §4.1 producer extensions, §6 index, §9 permissive consumption. Pinned to the commit arkouda vendors at [`docs/okf/SPEC.md`](../okf/SPEC.md); upstream `main` has since moved to v0.2, which arkouda does not yet implement.
 [2] [Adopt the Open Knowledge Format](adopt-okf.md) — the migration that made a second concept type possible
-[3] [ls-style list and a decision subcommand](ls-style-list-and-decision.md) — the primary-section CLI contract this generalizes
-[4] [Defer to Unix tools](defer-to-unix-tools.md) — why `--type` is a filter rather than a new subcommand
+[3] [ls-style list and a decision subcommand](ls-style-list-and-decision.md) — the primary-section CLI contract this generalizes, and whose naming half this ADR revises
+[4] [Defer to Unix tools](defer-to-unix-tools.md) — the test `arkouda section` has to pass to keep existing
 [5] [Parse Markdown instead of scanning lines](parse-markdown-instead-of-scanning-lines.md) — the prerequisite this ADR uncovered, and the reason Figma's grouping is now rejected on design grounds alone
 [6] [Michael Nygard's ADR template](https://github.com/joelparkerhenderson/architecture-decision-record/tree/main/locales/en/templates/decision-record-template-by-michael-nygard)
 
