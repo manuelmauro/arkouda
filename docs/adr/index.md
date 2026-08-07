@@ -4,6 +4,7 @@ okf_version: "0.1"
 
 # Proposed
 
+* [Parse Markdown instead of scanning lines](parse-markdown-instead-of-scanning-lines.md) - Replace hand-rolled line scanning with a CommonMark parser (pulldown-cmark), and keep the document-schema layer in-house rather than delegating to an external Markdown schema validator.
 * [Support Product Requirements Documents](support-product-requirements-documents.md) - Generalize arkouda from an ADR-only tool into a concept-type-aware OKF tool, adding Product Requirements Documents as a second built-in concept type.
 
 # Accepted

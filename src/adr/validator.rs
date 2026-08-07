@@ -11,7 +11,7 @@
 //! fail a bundle.
 
 use crate::adr::manifest::{ManifestError, split_content};
-use crate::adr::{ADR_TYPE, AdrStatus, Manifest, OKF_VERSION, is_valid_id};
+use crate::adr::{ADR_TYPE, AdrStatus, Manifest, OKF_VERSION, is_valid_id, markdown};
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -408,16 +408,12 @@ fn check_title_heading(manifest: &Manifest, result: &mut ValidationResult) {
         return;
     };
 
-    let h1 = manifest
-        .body
-        .lines()
-        .enumerate()
-        .find_map(|(line_index, line)| {
-            line.strip_prefix("# ")
-                .map(|heading| (line_index, heading.trim()))
-        });
+    let headings = markdown::headings(&manifest.body);
+    let h1 = headings
+        .iter()
+        .find(|heading| heading.level == markdown::TITLE_LEVEL);
 
-    let Some((line_index, heading)) = h1 else {
+    let Some(h1) = h1 else {
         result.errors.push(
             Diagnostic::new(DiagnosticCode::E007, "missing top-level Markdown heading")
                 .with_hint(format!("Add `# {title}` after the frontmatter.")),
@@ -425,11 +421,15 @@ fn check_title_heading(manifest: &Manifest, result: &mut ValidationResult) {
         return;
     };
 
-    if heading != title {
+    if h1.text != title {
+        let line_index = markdown::line_index(&manifest.body, h1.span.start);
         result.errors.push(
             Diagnostic::new(
                 DiagnosticCode::E008,
-                format!("top-level heading `{heading}` does not match title `{title}`"),
+                format!(
+                    "top-level heading `{}` does not match title `{title}`",
+                    h1.text
+                ),
             )
             .with_line(manifest.body_start_line + line_index)
             .with_hint(format!("Change the heading to `# {title}`.")),
@@ -438,14 +438,10 @@ fn check_title_heading(manifest: &Manifest, result: &mut ValidationResult) {
 }
 
 fn check_required_sections(manifest: &Manifest, result: &mut ValidationResult) {
-    let sections: HashSet<String> = manifest
-        .body
-        .lines()
-        .filter_map(|line| {
-            line.strip_prefix("## ")
-                .map(str::trim)
-                .map(|section| section.trim_end_matches('#').trim().to_ascii_lowercase())
-        })
+    let sections: HashSet<String> = markdown::headings(&manifest.body)
+        .into_iter()
+        .filter(|heading| heading.level == markdown::SECTION_LEVEL)
+        .map(|heading| heading.text.to_ascii_lowercase())
         .collect();
 
     for required in ["status", "context", "decision", "consequences"] {
@@ -529,6 +525,63 @@ Consequences.
         let manifest = parse("docs/adr/basic-adr-cli.md", &good_adr());
         let result = validate(&manifest);
         assert!(result.errors.is_empty(), "{:#?}", result.errors);
+    }
+
+    #[test]
+    fn a_section_heading_inside_a_fence_does_not_satisfy_the_requirement() {
+        // Before Markdown was parsed rather than scanned, this validated
+        // cleanly: the scanner saw `## Decision` and `## Consequences` inside
+        // the fence and reported four required sections present on a document
+        // that has two.
+        let content = "---
+type: Architecture Decision Record
+title: Basic ADR CLI
+description: Navigate ADRs.
+status: proposed
+timestamp: 2026-05-06
+---
+
+# Basic ADR CLI
+
+## Status
+
+Proposed
+
+## Context
+
+An ADR template looks like this:
+
+```markdown
+## Decision
+
+## Consequences
+```
+";
+        let manifest = parse("docs/adr/basic-adr-cli.md", content);
+        let codes = codes(&validate(&manifest));
+        assert_eq!(
+            codes,
+            [DiagnosticCode::E009, DiagnosticCode::E009],
+            "the fenced headings are code, so Decision and Consequences are missing"
+        );
+    }
+
+    #[test]
+    fn a_concept_may_document_its_own_format() {
+        // The complement of the test above: a real section whose body carries
+        // a fenced template must still validate, and must not be truncated.
+        let content = good_adr().replace(
+            "Decision.\n",
+            "Use this shape:\n\n```markdown\n# Title\n\n## Status\n\n## Context\n```\n\nThat is all.\n",
+        );
+        let manifest = parse("docs/adr/basic-adr-cli.md", &content);
+
+        assert!(validate(&manifest).errors.is_empty());
+        let decision = manifest.section("decision").expect("decision present");
+        assert!(
+            decision.contains("## Context") && decision.ends_with("That is all."),
+            "the fence must not end the section: {decision}"
+        );
     }
 
     #[test]

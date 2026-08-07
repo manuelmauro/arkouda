@@ -24,7 +24,7 @@ Arkouda's pitch is that an AI coding agent should check what was already decided
 
 Product Requirements Documents are the established artefact for that, and they have the same properties that made ADRs worth tooling: Markdown, YAML frontmatter, one file per topic, versioned in the repo, written by humans and agents alike, read far more often than written.
 
-[Adopting OKF](adopt-okf.md) already did most of the work of making a second document type possible. An arkouda ADR directory is an OKF v0.1 knowledge bundle, and OKF's central abstraction is the _concept_: a Markdown document whose only required frontmatter key is `type`. OKF does not say a bundle holds one type — `type` is per-concept precisely so a bundle can hold many. Everything arkouda does with a bundle today (recursive discovery, concept ids from paths, reserved `index.md`/`log.md`, frontmatter parsing that tolerates unknown keys, `index.md` generation) is already type-agnostic.
+[Adopting OKF](adopt-okf.md) already did most of the work of making a second document type possible. An arkouda ADR directory is an OKF v0.1 knowledge bundle, and OKF's central abstraction is the _concept_: a Markdown document whose only required frontmatter key is `type`. OKF does not say a bundle holds one type — `type` is per-concept precisely so a bundle can hold many. Most of what arkouda does with a bundle today is already type-agnostic: recursive discovery, concept ids from paths, reserved `index.md`/`log.md`, and frontmatter parsing that tolerates unknown keys. `index.md` generation is the exception — it accepts a concept of any type, but groups by `AdrStatus::ALL` and falls back to an `Other` heading, so its headings are the ADR status vocabulary.
 
 What is not type-agnostic is arkouda's own layer on top, and it is hardcoded in four places:
 
@@ -56,9 +56,9 @@ Introduce a `ConceptType` descriptor in `src/adr/` (renamed to `src/concept/`) t
 | primary section   | `Decision`                                                     | `Requirements`                                                         |
 | default directory | `docs/adr`                                                     | `docs/prd`                                                             |
 
-The two descriptors are the only instances, and types are **not** user-definable in this change — but the descriptor is deliberately the shape a user-supplied template would deserialize into, so bringing your own type later is a config parser rather than a redesign (see Alternatives). Status order within a descriptor is lifecycle order, which is what `index.md` grouping and `--sort status` use.
+The two descriptors are the only instances, and types are **not** user-definable in this change — but the descriptor is deliberately the shape a user-supplied template would deserialize into, so bringing your own type later is a config parser rather than a redesign (see Alternatives). Status order within a descriptor is lifecycle order, which is what `index.md` grouping uses. `arkouda list --sort status` is unaffected: it compares status strings today and continues to. Making it lifecycle-ordered would be a behaviour change independent of this ADR, and across two vocabularies there is no combined lifecycle order to sort by.
 
-Required frontmatter keys are the same for both types — `type`, `title`, `description`, `status`, `timestamp` — because they are OKF's own recommended set, not an ADR invention. A PRD's `description` summarizes what is being built, as an ADR's summarizes what was decided.
+Required frontmatter keys are the same for both types: `type`, `title`, `description`, `status`, `timestamp`. That set is **arkouda's profile, not OKF's contract.** OKF v0.1 requires only `type`; `title`, `description`, and `timestamp` are among its recommended fields, and `status` is a producer extension arkouda defines under §4.1. A document carrying nothing but `type` is fully OKF-conformant and still fails `arkouda check` — which is the layering [adopting OKF](adopt-okf.md) established, with OKF conformance as the floor and arkouda's contract on top. Requiring the same five for both types keeps that floor in one place rather than per type. A PRD's `description` summarizes what is being built, as an ADR's summarizes what was decided.
 
 ### The PRD schema
 
@@ -203,7 +203,8 @@ Uniform nesting beats conditional nesting. A single-type bundle pays one extra h
 - `--status` loses its static completion values, because valid statuses now depend on `--type`. Shell completions will offer nothing for it until completions learn to be type-aware.
 - `arkouda decision` is a misleading name when the concept is a PRD. The alternative was a subcommand per type, which does not scale.
 - Every existing `index.md` regenerates with a new heading structure — a one-line diff of churn per bundle, and a stale-index warning until someone runs `arkouda index`.
-- Two vocabularies means `arkouda list --sort status` orders within a type but interleaves across types. Sorting a mixed collection by status is now only meaningful with `--type`.
+- `arkouda list --sort status` compares status strings, so a mixed collection interleaves two vocabularies in one alphabetical run. Sorting by status is only meaningful alongside `--type`.
+- Arkouda's `status` extension is on a collision course with OKF v0.2, which promotes `status` to a spec field with the values `draft`, `stable`, and `deprecated`. Arkouda implements v0.1, where `status` is unclaimed, so nothing breaks today — but this ADR adds a second status vocabulary to a key upstream now defines differently, which makes the eventual v0.2 migration harder. That migration needs its own ADR either way.
 - Apart from `Status`, the two types share no section headings, so `arkouda decision <id> --section <name>` takes a different set of names depending on what the concept is. An agent that guesses `--section context` on a PRD gets a `SectionNotFound` error rather than a near-miss. That is the intended failure — the alternative is a shared vocabulary that implies the documents answer the same question — but it does mean `--section` cannot be scripted across a mixed collection without branching on type, `--section status` excepted.
 - The module named `adr` becomes the module named `concept`, and `AdrStatus`, `ADR_TYPE`, and `ADR_DIR` are all named after one of two types. The env var stays `ADR_DIR` for compatibility; the internals get renamed.
 - **Ordering constraint:** [parsing Markdown instead of scanning lines](parse-markdown-instead-of-scanning-lines.md) must land first. Documenting a second type means showing its headings, and while section handling scanned raw lines, a heading inside a fence counted as a real section — a concept carrying a template passed `check` without having the sections it appeared to declare, and `decision` truncated its output at the fence. This ADR's own body triggered both. That defect is fixed and recorded separately, so PRD support needs no further work there, but it cannot ship ahead of it.
@@ -212,7 +213,7 @@ Uniform nesting beats conditional nesting. A single-type bundle pays one extra h
 
 - One new diagnostic code (`E015`), and it is a warning, so the `E000`–`E014` contract that CI and agents key on keeps its shape and nothing that passes today starts failing.
 - Discovery, concept ids, reserved filenames, id slug rules, and duplicate-id detection are untouched — they were already type-agnostic.
-- Arkouda's own `docs/adr/` bundle is unaffected until it grows a PRD. Existing ADRs validate as-is.
+- Existing ADR *documents* are unaffected: none needs editing, and all validate as-is, whether or not a PRD ever joins them. Their generated `index.md` is a separate matter — the type-then-status regrouping applies to every bundle, so arkouda's own `docs/adr/index.md` is rewritten by the first `arkouda index` run after this ships, with no PRD involved.
 - `skills/use-arkouda/SKILL.md` and the README both widen: the skill must teach when to write a PRD versus an ADR, or an agent will keep reaching for `arkouda new` with the default type.
 
 ## Alternatives Considered
@@ -257,7 +258,7 @@ Figma's *Launch Checklist* is likewise left out: its rows are Figma's team topol
 
 ## Citations
 
-[1] [Open Knowledge Format v0.1 specification](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) — §4.1 producer extensions, §6 index, §9 permissive consumption
+[1] [Open Knowledge Format v0.1 specification](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/ee67a5ca27044ebe7c38385f5b6cffc2305a9c1a/okf/SPEC.md) — §4.1 producer extensions, §6 index, §9 permissive consumption. Pinned to the commit arkouda vendors at [`docs/okf/SPEC.md`](../okf/SPEC.md); upstream `main` has since moved to v0.2, which arkouda does not yet implement.
 [2] [Adopt the Open Knowledge Format](adopt-okf.md) — the migration that made a second concept type possible
 [3] [ls-style list and a decision subcommand](ls-style-list-and-decision.md) — the primary-section CLI contract this generalizes
 [4] [Defer to Unix tools](defer-to-unix-tools.md) — why `--type` is a filter rather than a new subcommand
