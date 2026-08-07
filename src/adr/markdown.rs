@@ -44,14 +44,24 @@ fn options() -> Options {
     Options::ENABLE_TABLES
 }
 
-/// Every heading in `body`, in document order.
+/// Every document-level heading in `body`, in document order.
+///
+/// A heading nested inside a block container — a block quote, a list item, a
+/// footnote definition — is not a section of the document that contains it, in
+/// the same way that a heading inside a code block is not a heading. Quoting a
+/// template must not satisfy the requirement to have written one.
 pub fn headings(body: &str) -> Vec<Heading> {
     let mut headings = Vec::new();
     let mut open: Option<(u8, Range<usize>, String)> = None;
+    let mut container_depth = 0usize;
 
     for (event, span) in Parser::new_ext(body, options()).into_offset_iter() {
         match event {
-            Event::Start(Tag::Heading { level, .. }) => {
+            Event::Start(tag) if is_container(&tag) => container_depth += 1,
+            Event::End(tag_end) if is_container_end(&tag_end) => {
+                container_depth = container_depth.saturating_sub(1);
+            }
+            Event::Start(Tag::Heading { level, .. }) if container_depth == 0 => {
                 open = Some((level_number(level), span, String::new()));
             }
             // Inline markup is flattened: a heading may legitimately contain
@@ -106,6 +116,22 @@ pub fn line_index(body: &str, offset: usize) -> usize {
         .count()
 }
 
+/// Whether `tag` opens a block container that can hold a heading. Anything
+/// inside one belongs to that container, not to the document.
+fn is_container(tag: &Tag<'_>) -> bool {
+    matches!(
+        tag,
+        Tag::BlockQuote(_) | Tag::List(_) | Tag::Item | Tag::FootnoteDefinition(_)
+    )
+}
+
+fn is_container_end(tag_end: &TagEnd) -> bool {
+    matches!(
+        tag_end,
+        TagEnd::BlockQuote(_) | TagEnd::List(_) | TagEnd::Item | TagEnd::FootnoteDefinition
+    )
+}
+
 fn level_number(level: HeadingLevel) -> u8 {
     match level {
         HeadingLevel::H1 => 1,
@@ -149,6 +175,43 @@ mod tests {
             .map(|heading| heading.text)
             .collect();
         assert_eq!(texts, ["Title", "Context"]);
+    }
+
+    #[test]
+    fn headings_inside_a_block_quote_are_not_document_headings() {
+        let body = "# Title\n\n## Context\n\nSomeone quoted a template:\n\n> ## Decision\n>\n> ## Consequences\n";
+        let texts: Vec<String> = headings(body)
+            .into_iter()
+            .map(|heading| heading.text)
+            .collect();
+        assert_eq!(
+            texts,
+            ["Title", "Context"],
+            "quoting a template is not writing one"
+        );
+    }
+
+    #[test]
+    fn headings_inside_a_list_item_are_not_document_headings() {
+        let body = "# Title\n\n## Context\n\n- ## Decision\n";
+        let texts: Vec<String> = headings(body)
+            .into_iter()
+            .map(|heading| heading.text)
+            .collect();
+        assert_eq!(texts, ["Title", "Context"]);
+    }
+
+    #[test]
+    fn a_document_heading_after_a_container_is_still_found() {
+        // The container counter must come back down, or every heading after
+        // the first list in a document would be dropped.
+        let body = "# Title\n\n## Context\n\n- a\n- b\n\n> quoted\n\n## Decision\n\nX.\n";
+        let texts: Vec<String> = headings(body)
+            .into_iter()
+            .map(|heading| heading.text)
+            .collect();
+        assert_eq!(texts, ["Title", "Context", "Decision"]);
+        assert_eq!(section(body, "decision").as_deref(), Some("X."));
     }
 
     #[test]

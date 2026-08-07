@@ -27,9 +27,11 @@ Arkouda decides what a document's structure is by scanning raw lines for a headi
 
 This is not parsing. Two defects follow, both verified against v0.5.0:
 
-**Fenced code blocks are invisible.** A heading inside a fence counts as a real heading. An ADR whose only `## Decision` and `## Consequences` headings sit inside a ` ```markdown ` fence passes `arkouda check` with no diagnostics — the validator reports four required sections present when the document has two.
+**Fenced code blocks are invisible.** A heading inside a fence counts as a real heading. An ADR whose only `## Decision` and `## Consequences` headings sit inside a `` ```markdown `` fence passes `arkouda check` with no diagnostics — the validator reports four required sections present when the document has two.
 
 **Section bodies swallow other heading levels.** `section` stops only at `## `, so an `#` or `###` between two `##` headings becomes part of the preceding section's body. Extracting a section from a document with any heading nesting returns the wrong text.
+
+There is a third variant of the first defect that a scanner and a naive parser share: a heading nested in a **block container** is not a section of the document either. `> ## Decision` inside a block quote, or `- ## Decision` inside a list item, is quoted or listed content. Quoting a template must not satisfy the requirement to have written one.
 
 Both defects bite hardest when a document explains a document format — because that means showing headings. [Supporting PRDs](https://github.com/manuelmauro/arkouda/pull/11) carries a PRD template in a fence, and demonstrates both: `arkouda decision support-product-requirements-documents` truncates at the template's first heading, and the template's headings are indistinguishable from the ADR's own.
 
@@ -59,6 +61,8 @@ Split the problem: **delegate the parser, own the schema.**
 ### Parse with `pulldown-cmark`
 
 Replace all three line-scanning sites with a single pass over parser events, yielding each heading's level, text, and source range. Fenced and indented code blocks, setext headings, and HTML blocks are then handled by the CommonMark specification rather than by luck.
+
+Only **document-level** headings count. The pass tracks open block containers — block quotes, lists, list items, footnote definitions — and ignores headings nested inside one, because those belong to the container rather than to the document. A parser alone does not give this: `pulldown-cmark` reports `> ## Decision` as a genuine heading, correctly, and it is arkouda's job to decide that a quoted heading is not a section.
 
 `Manifest::section` keeps its signature and its case-insensitive matching. Its termination rule changes from "the next line starting with `## `" to **"the next heading of the same or higher level"**, which is what the current rule was approximating.
 
@@ -102,7 +106,7 @@ That last point is the interesting one, because it has an expiry date. If [user-
 
 ### Track fence state in the existing scanner
 
-Toggle a boolean on every line starting with ` ``` ` and skip headings while it is set. A dozen lines, no dependency, and it fixes the reported bug today.
+Toggle a boolean on every line starting with `` ``` `` and skip headings while it is set. A dozen lines, no dependency, and it fixes the reported bug today.
 
 It also fixes exactly one construct. Indented code blocks are next, then setext headings, then HTML blocks, then the heading-level bug that is already known and not addressed by fence tracking at all. Each is individually cheap and collectively a CommonMark parser, written incrementally, by people who are not trying to write one. The bug class survives; only this instance dies.
 
