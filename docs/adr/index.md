@@ -2,6 +2,10 @@
 okf_version: "0.1"
 ---
 
+# Proposed
+
+* [Parse Markdown instead of scanning lines](parse-markdown-instead-of-scanning-lines.md) - Replace hand-rolled line scanning with a CommonMark parser (pulldown-cmark), and keep the document-schema layer in-house rather than delegating to an external Markdown schema validator.
+
 # Accepted
 
 * [Adopt the Open Knowledge Format](adopt-okf.md) - Store ADRs as an OKF v0.1 knowledge bundle, replacing arkouda's bespoke frontmatter schema with OKF's type/title/description/timestamp fields.

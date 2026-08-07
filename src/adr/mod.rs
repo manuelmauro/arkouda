@@ -15,6 +15,7 @@ pub mod discovery;
 pub mod frontmatter;
 pub mod index;
 pub mod manifest;
+pub mod markdown;
 pub mod status;
 pub mod validator;
 
