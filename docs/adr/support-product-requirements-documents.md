@@ -74,6 +74,9 @@ resource: https://github.com/org/repo/issues/42 # optional: the tracker item
 owner: # optional; PRD extension, mirrors `deciders`
   - alice
 target_release: 2026-09-01 # optional; PRD extension
+decisions: # optional; concept ids of the ADRs that shaped this PRD
+  - adopt-okf
+  - defer-to-unix-tools
 ---
 
 # Bulk ADR Import
@@ -102,10 +105,6 @@ What this explicitly does not cover.
 
 How we will know it worked.
 
-## Decisions
-
-- [adopt-okf](../adr/adopt-okf.md) — the bundle format this builds on
-
 ## Open Questions
 ```
 
@@ -113,15 +112,27 @@ The H1 must equal `title`, as for ADRs.
 
 **A PRD borrows the ADR's section vocabulary only where the two documents genuinely agree.** `Status` is shared: it is a lifecycle marker rather than decision-specific language, both types carry the same fact in frontmatter, and mirroring it in the body is a convention arkouda already applies uniformly. Everything else is PRD-native. In particular there is no `## Context` — that is a decision record's word for what every product template surveyed calls the *Problem*, and borrowing it would make the ADR vocabulary look like arkouda's universal one, which is the assumption this ADR exists to remove.
 
-Five required sections: the lifecycle (`Status`), the motivation (`Problem`), the substance (`Requirements`), the boundary (`Non-Goals`), and the falsifiable claim about the outcome (`Success Metrics`). `Approach`, `Decisions`, and `Open Questions` are scaffolded by `arkouda new` but not validated — the same treatment arkouda's own ADRs give `Alternatives Considered` and `Citations`. Requiring them would make the cheapest useful PRD expensive to write; scaffolding them makes writing them the default.
+Five required sections: the lifecycle (`Status`), the motivation (`Problem`), the substance (`Requirements`), the boundary (`Non-Goals`), and the falsifiable claim about the outcome (`Success Metrics`). `Approach` and `Open Questions` are scaffolded by `arkouda new` but not validated — the same treatment arkouda's own ADRs give `Alternatives Considered` and `Citations`. Requiring them would make the cheapest useful PRD expensive to write; scaffolding them makes writing them the default.
 
 `Non-Goals` is required rather than scaffolded because it is the section most consistently skipped and most expensive to omit, and because a validator can enforce a heading but not a prompt. Shape Up gives it a named ingredient (*No-Gos*) and Atlassian's blueprint closes on *Out of Scope*; Figma's template is the dissent, folding the question into instructional prose under *The Problem* and *Key Features*. Prose is exactly what `arkouda check` cannot see.
 
-`Decisions` is where a PRD links the ADRs that shaped it, by concept id. It is the reason both types belong in one tool: the requirement and the decision that serves it are one `rg` apart, and neither restates the other.
+### Linking a PRD to the decisions that shaped it
+
+`decisions` is a frontmatter list of ADR concept ids, not a body section. It is the edge that makes both types in one tool pay off: the requirement and the decision serving it are one lookup apart, and neither restates the other.
+
+Frontmatter rather than a `## Decisions` section, for three reasons:
+
+- **Concept ids survive reconfiguration.** A body section links by relative path (`../adr/adopt-okf.md`), which bakes the directory layout into every PRD — in the same change that makes the layout configurable per type. Point `prd` at `docs/product/prd` and every such link breaks. A concept id is bundle-relative and layout-independent.
+- **It is checkable.** A list of ids can be resolved against the loaded collection; Markdown prose cannot. Dangling cross-references are the characteristic rot of linked documents — an ADR gets superseded and the PRD keeps pointing at it, silently.
+- **It matches an existing pattern.** `superseded_by` is already a frontmatter concept-id reference. `decisions` is the same idea with a cardinality of many, so the schema grows a second instance of a shape it has rather than a new shape.
+
+Losing the section loses the prose about _why_ a given decision matters here, which is what Figma's *Open Issues & Key Decisions* section is for. In arkouda that prose has a home already: it is the ADR. Coda has no document type for "the discussion happened and here are the tradeoffs", so Figma's template has to carry it inline. Arkouda's whole premise is that it does have one, and a PRD only needs to point at it.
+
+Backlinks — which PRDs depend on this ADR — are derivable from the same list and are not stored on the ADR side. `decisions` is deliberately one-directional, so there is one place to update when a link changes.
 
 Arkouda validates document *structure*, not requirement *content*. It will not enforce `FR-###`/`SC-###` numbering, `P1`/`P2` priorities, or [EARS](https://alistairmavin.com/ears/) acceptance-criteria syntax (`WHEN <event> THE SYSTEM SHALL <behavior>`) the way spec-driven tools like GitHub's spec-kit and Kiro do. Those are worth adopting inside a `## Requirements` section and are out of scope for a validator whose contract is headings and frontmatter.
 
-`owner` and `target_release` are new optional producer extensions (OKF §4.1); `owner` parallels `deciders`, and `target_release` is the one scheduling field Atlassian's blueprint treats as first-class. `resource` already exists in the frontmatter struct and is where a PRD's tracker link goes. `superseded_by` works unchanged for both types.
+`owner`, `target_release`, and `decisions` are new optional producer extensions (OKF §4.1); `owner` parallels `deciders`, and `target_release` is the one scheduling field Atlassian's blueprint treats as first-class. `resource` already exists in the frontmatter struct and is where a PRD's tracker link goes. `superseded_by` works unchanged for both types, and starts being validated (see below).
 
 The status vocabulary deliberately blends document state (`draft`, `in-review`, `approved`) with delivery state (`shipped`, `abandoned`), which Atlassian's blueprint splits across two fields. One field is the right call here: arkouda groups `index.md` by status and sorts by it, and two lifecycle axes would need two groupings. The ADR vocabulary already blends the same way — `proposed` and `accepted` describe the document, `deprecated` describes the world.
 
@@ -159,13 +170,17 @@ A bundle may hold mixed types. Type comes from frontmatter, never from the path 
 
 ### Validation
 
-`arkouda check` validates every concept against the descriptor its `type` names. **No new diagnostic codes**; three change meaning to be type-relative:
+`arkouda check` validates every concept against the descriptor its `type` names. Three existing codes change meaning to be type-relative:
 
 - `E005` — `type` is not one of the types arkouda knows (was: `type` is not `Architecture Decision Record`).
 - `E003` — `status` is not in _this type's_ vocabulary. The hint lists that type's values.
 - `E009` — a section required by _this type_ is missing.
 
 A concept with an unknown `type` is an `E005` error rather than a skipped file. Arkouda manages the bundles it is pointed at; silently ignoring a document it cannot check would hide exactly the drift `check` exists to catch.
+
+One code is added. **`E015` — a frontmatter concept reference does not resolve to a loaded concept.** It covers `decisions` and, for the first time, `superseded_by`: that key has been parsed but never validated since it was introduced, so a supersede pointing at a renamed or deleted ADR is silent today.
+
+`E015` is a **warning**, not an error, because arkouda cannot distinguish a broken reference from an out-of-scope one. `arkouda check --dir docs/prd` loads one bundle, and every `decisions` entry pointing into `docs/adr` is then legitimately unresolvable. Failing there would make `check` depend on which directories the invocation happened to cover. This is the same reasoning that made `E013` and `E014` warnings — OKF §9 permissive consumption — and it keeps the property that `check` never fails a bundle for something outside it.
 
 ### `index.md`
 
@@ -180,6 +195,7 @@ Uniform nesting beats conditional nesting. A single-type bundle pays one extra h
 - An agent can answer "what are we building" and "why is it built this way" from one CLI, one config file, one diagnostic vocabulary, and one skill — and `arkouda list | xargs rg -i <topic>` searches both at once.
 - The hardcoded type, status list, section list, and template collapse into one descriptor, so a third type (RFC, runbook, postmortem) becomes a data change rather than a refactor — and user-supplied templates become a config parser over a shape that already exists.
 - PRDs get the property that made ADRs worth tooling: a strict schema with machine-readable diagnostics, so CI can gate on a PRD being well-formed and an agent gets an actionable error instead of a shrug.
+- `decisions` makes the PRD-to-ADR edge typed data rather than prose, so traversing from a requirement to its rationale is a frontmatter read rather than a Markdown-link parse — and `superseded_by` finally gets validated, closing a hole that predates this change.
 - Arkouda becomes closer to what OKF describes — a consumer of typed concepts — rather than a tool that reads OKF bundles but only believes in one type.
 
 ### Negative
@@ -194,7 +210,7 @@ Uniform nesting beats conditional nesting. A single-type bundle pays one extra h
 
 ### Neutral
 
-- No new diagnostic codes, so the `E000`–`E014` contract that CI and agents key on is unchanged in shape.
+- One new diagnostic code (`E015`), and it is a warning, so the `E000`–`E014` contract that CI and agents key on keeps its shape and nothing that passes today starts failing.
 - Discovery, concept ids, reserved filenames, id slug rules, and duplicate-id detection are untouched — they were already type-agnostic.
 - Arkouda's own `docs/adr/` bundle is unaffected until it grows a PRD. Existing ADRs validate as-is.
 - `skills/use-arkouda/SKILL.md` and the README both widen: the skill must teach when to write a PRD versus an ADR, or an agent will keep reaching for `arkouda new` with the default type.
