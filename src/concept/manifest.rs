@@ -1,12 +1,13 @@
-//! ADR concept document parsing.
+//! Concept document parsing.
 
-use crate::adr::concept_id;
-use crate::adr::frontmatter::Frontmatter;
-use crate::adr::markdown;
+use crate::concept::concept_id;
+use crate::concept::frontmatter::Frontmatter;
+use crate::concept::markdown;
+use crate::concept::types::ConceptType;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-/// A parsed ADR concept document.
+/// A parsed concept document.
 #[derive(Debug, Clone)]
 pub struct Manifest {
     /// Path to the concept's Markdown file.
@@ -25,7 +26,7 @@ pub struct Manifest {
     pub body_start_line: usize,
 }
 
-/// Errors that can occur when parsing an ADR concept document.
+/// Errors that can occur when parsing a concept document.
 #[derive(Debug, Error)]
 pub enum ManifestError {
     /// The file does not start with a YAML frontmatter delimiter.
@@ -46,10 +47,15 @@ pub enum ManifestError {
 }
 
 impl Manifest {
-    /// Parse an ADR concept document sitting inside `bundle_root`.
+    /// Parse a concept document sitting inside `bundle_root`.
     pub fn parse(path: &Path, bundle_root: &Path) -> Result<Self, ManifestError> {
         let content = std::fs::read_to_string(path)?;
         Self::parse_content(path, bundle_root, &content)
+    }
+
+    /// The concept type this document declares, when arkouda knows it.
+    pub fn concept_type(&self) -> Option<&'static ConceptType> {
+        self.frontmatter.resolved_type()
     }
 
     /// Return the body of a `## <name>` Markdown section, with surrounding

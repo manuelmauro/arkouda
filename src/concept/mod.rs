@@ -1,9 +1,14 @@
-//! ADR parsing, discovery, and validation, over an [OKF][okf] knowledge bundle.
+//! Concept parsing, discovery, and validation, over an [OKF][okf] knowledge
+//! bundle.
 //!
-//! An ADR directory is an OKF bundle: a tree of markdown concept documents,
-//! each carrying YAML frontmatter. A concept's id is its path within the
-//! bundle with the `.md` suffix removed (OKF §2), so `security/mtls.md` has
-//! concept id `security/mtls`.
+//! An arkouda directory is an OKF bundle: a tree of markdown concept
+//! documents, each carrying YAML frontmatter. A concept's id is its path
+//! within the bundle with the `.md` suffix removed (OKF §2), so
+//! `security/mtls.md` has concept id `security/mtls`.
+//!
+//! What kind of document a concept is comes from its frontmatter `type`, never
+//! from where it sits, so a bundle may hold several types at once. Everything
+//! type-specific lives in a [`ConceptType`] descriptor.
 //!
 //! [okf]: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md
 
@@ -16,12 +21,12 @@ pub mod frontmatter;
 pub mod index;
 pub mod manifest;
 pub mod markdown;
-pub mod status;
+pub mod types;
 pub mod validator;
 
-pub use frontmatter::{ADR_TYPE, Frontmatter};
+pub use frontmatter::Frontmatter;
 pub use manifest::Manifest;
-pub use status::AdrStatus;
+pub use types::{ConceptType, Status};
 pub use validator::{Diagnostic, DiagnosticCode, ValidationResult};
 
 /// The OKF version this crate targets.
@@ -71,15 +76,16 @@ fn file_stem(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// Return true when an ADR id is a lowercase slug.
+/// Return true when a concept id segment is a lowercase slug.
 pub fn is_valid_id(id: &str) -> bool {
     static ID_REGEX: OnceLock<Regex> = OnceLock::new();
     let regex = ID_REGEX.get_or_init(|| Regex::new(r"^[a-z0-9]+(-[a-z0-9]+)*$").unwrap());
     regex.is_match(id)
 }
 
-/// Generate a lowercase slug id from free-form text.
-pub fn slugify(input: &str) -> String {
+/// Generate a lowercase slug id from free-form text, falling back to
+/// `fallback` when nothing slug-worthy survives.
+pub fn slugify(input: &str, fallback: &str) -> String {
     let mut slug = String::new();
     let mut last_was_dash = false;
 
@@ -96,7 +102,7 @@ pub fn slugify(input: &str) -> String {
     slug.truncate(slug.trim_end_matches('-').len());
 
     if slug.is_empty() {
-        String::from("adr")
+        fallback.to_owned()
     } else {
         slug
     }
@@ -118,9 +124,9 @@ mod tests {
 
     #[test]
     fn slugifies_titles() {
-        assert_eq!(slugify("Basic ADR CLI"), "basic-adr-cli");
-        assert_eq!(slugify("  Hello, world!  "), "hello-world");
-        assert_eq!(slugify("---"), "adr");
+        assert_eq!(slugify("Basic ADR CLI", "adr"), "basic-adr-cli");
+        assert_eq!(slugify("  Hello, world!  ", "adr"), "hello-world");
+        assert_eq!(slugify("---", "prd"), "prd", "the fallback is type-aware");
     }
 
     #[test]

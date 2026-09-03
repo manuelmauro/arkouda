@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Product Requirements Documents as a second built-in concept type.** Arkouda is now a concept-type-aware OKF tool rather than an ADR-only one: a `ConceptType` descriptor carries each type's OKF `type` string, status vocabulary, required sections, primary section, default directory, and template, and the two built-in types are Architecture Decision Record and Product Requirements Document. A PRD's required sections are `Status`, `Problem`, `Requirements`, `Non-Goals`, and `Success Metrics`; `Approach` and `Open Questions` are scaffolded but not validated. Its statuses are `draft`, `in-review`, `approved`, `shipped`, `abandoned`, `superseded`, and its default directory is `docs/prd`. Types are not user-definable. See [`docs/adr/support-product-requirements-documents.md`](docs/adr/support-product-requirements-documents.md).
+- `arkouda new --type adr|prd` (defaults to `adr`) selects the template, the `type` string, the status vocabulary, and the target directory.
+- `arkouda list --type adr|prd` filters by the type a concept declares in its frontmatter — never by the directory it sits in, so a bundle may hold both.
+- Three optional frontmatter producer extensions: `owner` (a PRD's counterpart to `deciders`), `target_release`, and `decisions` — a list of the concept ids of the ADRs that shaped a PRD. `decisions` is frontmatter rather than a body section so that it survives reconfiguring where a type's documents live, and so that `check` can resolve it.
+- **`E015`** *(warning)* — a frontmatter concept reference does not resolve to a loaded concept. It covers `decisions` and, for the first time, `superseded_by`, which had been parsed but never validated since it was introduced. A warning rather than an error because arkouda cannot distinguish a broken reference from one pointing into a bundle the invocation did not load.
+- `.arkoudarc.toml` accepts a per-type `dirs` table alongside the existing flat list:
+  ```toml
+  [dirs]
+  adr = ["docs/adr"]
+  prd = ["docs/prd"]
+  ```
+  Both forms parse into one model: a type-to-roots map plus the union that `list`, `check`, `section`, and `index` search. `new` writes into the first root configured for the type it is creating. With nothing configured the defaults are `adr → docs/adr` and `prd → docs/prd`.
+
+### Changed
+
+- **BREAKING.** `arkouda decision <id> [--section <name>]` is now `arkouda section <id> [<name>]`, with the section name as an optional positional and **no `decision` alias**. With no name it prints the concept type's primary section — `## Decision` for an ADR, `## Requirements` for a PRD. A command that announces its output as a decision invites a requirements section to be recorded as one, and arkouda's primary consumer is an agent. This revises the naming half of [`ls-style-list-and-decision`](docs/adr/ls-style-list-and-decision.md); its list decision stands.
+- **BREAKING.** `arkouda list -l` gains a type column: the table is now `ID TYPE STATUS TIMESTAMP PATH TITLE — DESCRIPTION`. `awk '$2=="accepted"'` becomes `$3`, and `{print $4}` becomes `{print $5}`. The type is the one fact about a mixed collection that nothing else reveals — it cannot be inferred from the path — and `list -l` is the first command run in an unfamiliar repo. `arkouda list` without `-l`, the actual pipeline surface, is untouched.
+- **BREAKING.** Every `index.md` regenerates with a new heading structure: `# <Type>` at H1 and `## <Status>` at H2, where before status was the H1. Nesting is uniform, so a single-type bundle pays one extra heading level and consumers parse one shape instead of two. Existing bundles report `E014` (stale index, a warning) until `arkouda index` is run; no concept document needs editing.
+- **BREAKING.** `arkouda new --status` is no longer a clap `ValueEnum`, because which values are valid now depends on `--type`. It is validated against the resolved type's vocabulary and defaults to the first of its lifecycle (`proposed` for an ADR, `draft` for a PRD). Shell completions offer nothing for it until they learn to be type-aware.
+- `E005`, `E003`, and `E009` are now type-relative: `E005` fires when `type` is not one of the types arkouda knows (rather than when it is not `Architecture Decision Record`), `E003` checks `status` against *that type's* vocabulary, and `E009` checks *that type's* required sections. A concept whose `type` arkouda does not know is an `E005` error rather than a skipped file, and its sections are not checked against another type's contract.
+- The `adr` module is now `concept`, and `AdrStatus` and `ADR_TYPE` are gone, replaced by the per-type descriptor. The `ADR_DIR` environment variable keeps its name for compatibility.
+- `arkouda check` counts "concept(s)" rather than "ADR(s)", and the error text for a missing collection, an ambiguous lookup, and an existing file says "concept" rather than "ADR".
+
 ### Fixed
 
 - Markdown structure is determined by parsing the document rather than scanning lines for a `## ` prefix, fixing two defects. A heading inside a fenced or indented code block counted as a real heading, so an ADR whose only `## Decision` and `## Consequences` headings sat inside a fenced template passed `arkouda check` while missing both sections. And `arkouda decision` truncated its output at the first heading inside a fence. Setext headings (`Title` over `=====`) are now recognized. See [`docs/adr/parse-markdown-instead-of-scanning-lines.md`](docs/adr/parse-markdown-instead-of-scanning-lines.md).

@@ -1,6 +1,13 @@
-# Directories where arkouda looks for ADRs. Each is the root of an OKF
+# Directories where arkouda looks for concepts. Each is the root of an OKF
 # knowledge bundle and is scanned recursively. Relative paths resolve against
 # the location of this file, so the same config works from any subdirectory.
-# In a monorepo, list every ADR bundle you want aggregated, e.g.
+#
+# This flat form is shared by every concept type. In a monorepo, list every
+# bundle you want aggregated, e.g.
 #   dirs = ["docs/adr", "services/billing/docs/adr"]
+#
+# The typed form gives each type its own roots instead:
+#   [dirs]
+#   adr = ["docs/adr"]
+#   prd = ["docs/prd"]
 dirs = ["docs/adr"]

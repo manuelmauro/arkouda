@@ -1,9 +1,9 @@
-//! Validate an OKF bundle of ADRs.
+//! Validate an OKF bundle of concepts.
 
-use crate::adr::discovery::{self, ReservedKind};
-use crate::adr::{Diagnostic, DiagnosticCode, Manifest, ValidationResult, index, validator};
 use crate::cli::Cli;
 use crate::commands::DiscoveredBundle;
+use crate::concept::discovery::{self, ReservedKind};
+use crate::concept::{Diagnostic, DiagnosticCode, Manifest, ValidationResult, index, validator};
 use crate::error::Result;
 use colored::Colorize;
 use std::ops::Range;
@@ -14,7 +14,7 @@ type Report = Vec<(String, ValidationResult)>;
 
 /// Run the check command.
 pub fn run(cli: &Cli) -> Result<i32> {
-    let dirs = super::effective_dirs(cli)?;
+    let dirs = super::search_dirs(cli)?;
     let bundles = super::discover_bundles(&dirs)?;
 
     let (report, concept_count) = validate_bundles(&bundles)?;
@@ -157,7 +157,7 @@ fn print_report(report: &Report, concept_count: usize, quiet: bool) {
     println!();
     if total_errors == 0 && total_warnings == 0 {
         println!(
-            "{} {} ADR(s) checked, no issues found",
+            "{} {} concept(s) checked, no issues found",
             "✓".green().bold(),
             concept_count
         );
@@ -168,7 +168,7 @@ fn print_report(report: &Report, concept_count: usize, quiet: bool) {
             "!".yellow()
         };
         println!(
-            "{} {} ADR(s) checked: {} error(s), {} warning(s)",
+            "{} {} concept(s) checked: {} error(s), {} warning(s)",
             marker, concept_count, total_errors, total_warnings
         );
     }
@@ -200,7 +200,7 @@ fn print_diagnostic(kind: DiagnosticKind, diagnostic: &Diagnostic) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adr::discovery;
+    use crate::concept::discovery;
 
     const CONCEPT: &str = "---
 type: Architecture Decision Record

@@ -1,29 +1,34 @@
-//! Create a new ADR concept from the standard template.
+//! Create a new concept from its type's template.
 
-use crate::adr::{ADR_TYPE, AdrStatus, index, is_valid_id, slugify};
 use crate::cli::{Cli, NewArgs};
+use crate::concept::types::{self, ConceptType, Status};
+use crate::concept::{index, is_valid_id, slugify};
 use crate::error::{ArkoudaError, Result};
 use chrono::Local;
 use colored::Colorize;
-use serde::Serialize;
+use serde_yaml::{Mapping, Value};
 use std::path::{Path, PathBuf};
 
 /// Run the new command.
 pub fn run(args: &NewArgs, cli: &Cli) -> Result<i32> {
+    let concept_type =
+        types::by_slug(&args.concept_type).expect("clap restricts --type to known slugs");
+    let status = resolve_status(concept_type, args.status.as_deref())?;
+
     let id = match args.id.as_deref() {
         Some(explicit) => explicit.to_owned(),
-        None => slugify(&args.title),
+        None => slugify(&args.title, concept_type.slug),
     };
     if !is_valid_id(&id) {
         return Err(ArkoudaError::InvalidId(id));
     }
 
     let dirs = super::effective_dirs(cli)?;
-    let target_dir = super::primary_dir(&dirs);
-    std::fs::create_dir_all(target_dir)?;
+    let target_dir = super::write_dir(&dirs, concept_type)?.to_path_buf();
+    std::fs::create_dir_all(&target_dir)?;
     let path = target_dir.join(format!("{id}.md"));
     if path.exists() {
-        return Err(ArkoudaError::AdrExists {
+        return Err(ArkoudaError::ConceptExists {
             id,
             path: path.display().to_string(),
         });
@@ -33,25 +38,26 @@ pub fn run(args: &NewArgs, cli: &Cli) -> Result<i32> {
     let description = args
         .description
         .as_deref()
-        .unwrap_or("TODO: summarize the decision in one sentence.");
-    let content = render_template(&args.title, description, args.status, &timestamp);
+        .unwrap_or("TODO: summarize this concept in one sentence.");
+    let content = render_template(concept_type, &args.title, description, status, &timestamp);
 
     std::fs::write(&path, content)?;
 
     if !cli.quiet {
         println!(
-            "{} Created ADR '{}' at {}",
+            "{} Created {} '{}' at {}",
             "✓".green().bold(),
+            concept_type.okf_type,
             id,
             path.display()
         );
     }
 
-    // The ADR is on disk; the command has succeeded. Refreshing the index
+    // The concept is on disk; the command has succeeded. Refreshing the index
     // re-parses the whole bundle, so an unrelated malformed concept must not
     // turn a successful creation into a failing exit code. A stale index is
     // only ever a warning (E014), and `arkouda check` will say so.
-    if let Err(error) = refresh_index(target_dir, cli)
+    if let Err(error) = refresh_index(&target_dir, cli)
         && !cli.quiet
     {
         eprintln!(
@@ -65,6 +71,23 @@ pub fn run(args: &NewArgs, cli: &Cli) -> Result<i32> {
     }
 
     Ok(0)
+}
+
+/// Validate `--status` against the resolved type's vocabulary. Statuses are no
+/// longer a clap `ValueEnum` because which values are valid depends on
+/// `--type`, so the check happens here.
+fn resolve_status(concept_type: &ConceptType, requested: Option<&str>) -> Result<&'static Status> {
+    let Some(requested) = requested else {
+        return Ok(concept_type.default_status());
+    };
+
+    concept_type
+        .status(requested)
+        .ok_or_else(|| ArkoudaError::InvalidStatus {
+            status: requested.to_owned(),
+            concept_type: concept_type.okf_type.to_owned(),
+            valid: concept_type.status_list(),
+        })
 }
 
 /// Keep a bundle's `index.md` in step with the concept just added. A bundle
@@ -88,63 +111,59 @@ fn refresh_index(target_dir: &Path, cli: &Cli) -> Result<()> {
 }
 
 /// OKF frontmatter: the spec's required `type` and recommended fields first,
-/// then the ADR-specific extensions.
-#[derive(Serialize)]
-struct TemplateFrontmatter<'a> {
-    #[serde(rename = "type")]
-    concept_type: &'a str,
-    title: &'a str,
-    description: &'a str,
-    tags: &'a [String],
-    timestamp: &'a str,
-    status: AdrStatus,
-    deciders: &'a [String],
+/// then the producer extensions this type scaffolds.
+fn render_frontmatter(
+    concept_type: &ConceptType,
+    title: &str,
+    description: &str,
+    status: &Status,
+    timestamp: &str,
+) -> String {
+    let mut frontmatter = Mapping::new();
+    let mut set = |key: &str, value: Value| {
+        frontmatter.insert(Value::from(key), value);
+    };
+
+    set("type", Value::from(concept_type.okf_type));
+    set("title", Value::from(title));
+    set("description", Value::from(description));
+    set("tags", Value::Sequence(Vec::new()));
+    set("timestamp", Value::from(timestamp));
+    set("status", Value::from(status.name));
+    for extension in concept_type.template_extensions {
+        set(extension, Value::Sequence(Vec::new()));
+    }
+
+    serde_yaml::to_string(&Value::Mapping(frontmatter))
+        .expect("frontmatter serialization is infallible for static fields")
 }
 
-fn render_template(title: &str, description: &str, status: AdrStatus, timestamp: &str) -> String {
-    let frontmatter = TemplateFrontmatter {
-        concept_type: ADR_TYPE,
-        title,
-        description,
-        tags: &[],
-        timestamp,
-        status,
-        deciders: &[],
-    };
-    let yaml = serde_yaml::to_string(&frontmatter)
-        .expect("frontmatter serialization is infallible for static fields");
+fn render_template(
+    concept_type: &ConceptType,
+    title: &str,
+    description: &str,
+    status: &Status,
+    timestamp: &str,
+) -> String {
+    let yaml = render_frontmatter(concept_type, title, description, status, timestamp);
 
-    format!(
-        "---
-{yaml}---
-
-# {title}
-
-## Status
-
-{label}
-
-## Context
-
-TODO: describe the forces, constraints, and background for this decision.
-
-## Decision
-
-TODO: describe the decision.
-
-## Consequences
-
-TODO: describe the positive, negative, and neutral consequences.
-",
-        label = status.label(),
-    )
+    // `## Status` is common to every type and its body is the status label, so
+    // it is rendered here rather than listed as a template section.
+    let mut out = format!(
+        "---\n{yaml}---\n\n# {title}\n\n## Status\n\n{}\n",
+        status.label
+    );
+    for section in concept_type.template_sections {
+        out.push_str(&format!("\n## {}\n\n{}\n", section.heading, section.body));
+    }
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adr::{Manifest, validator};
     use crate::cli::Command;
+    use crate::concept::{Manifest, validator};
     use clap::Parser;
 
     fn temp_dir(name: &str) -> PathBuf {
@@ -155,15 +174,16 @@ mod tests {
     }
 
     /// Parse a `new` invocation and run it against `dir`.
-    fn run_new(dir: &Path, title: &str) -> Result<i32> {
-        let cli = Cli::parse_from([
+    fn run_new(dir: &Path, extra: &[&str]) -> Result<i32> {
+        let mut argv = vec![
             "arkouda",
             "--quiet",
             "--dir",
             dir.to_str().expect("utf-8 path"),
             "new",
-            title,
-        ]);
+        ];
+        argv.extend_from_slice(extra);
+        let cli = Cli::parse_from(argv);
         let Command::New(args) = &cli.command else {
             unreachable!("parsed a `new` invocation")
         };
@@ -178,9 +198,12 @@ mod tests {
         std::fs::write(root.join("broken.md"), "no frontmatter here\n").expect("write");
         std::fs::write(root.join("index.md"), "---\nokf_version: \"0.1\"\n---\n").expect("write");
 
-        let exit = run_new(&root, "Use Postgres").expect("creation must not error");
+        let exit = run_new(&root, &["Use Postgres"]).expect("creation must not error");
 
-        assert_eq!(exit, 0, "the ADR was created; the exit code must say so");
+        assert_eq!(
+            exit, 0,
+            "the concept was created; the exit code must say so"
+        );
         assert!(root.join("use-postgres.md").is_file());
 
         std::fs::remove_dir_all(&root).expect("cleanup");
@@ -191,7 +214,7 @@ mod tests {
         let root = temp_dir("refresh");
         std::fs::write(root.join("index.md"), "---\nokf_version: \"0.1\"\n---\n").expect("write");
 
-        assert_eq!(run_new(&root, "Use Postgres").expect("create"), 0);
+        assert_eq!(run_new(&root, &["Use Postgres"]).expect("create"), 0);
 
         let index = std::fs::read_to_string(root.join("index.md")).expect("read index");
         assert!(
@@ -206,7 +229,7 @@ mod tests {
     fn creation_never_conjures_an_index() {
         let root = temp_dir("no-index");
 
-        assert_eq!(run_new(&root, "Use Postgres").expect("create"), 0);
+        assert_eq!(run_new(&root, &["Use Postgres"]).expect("create"), 0);
 
         assert!(
             !root.join("index.md").exists(),
@@ -217,25 +240,87 @@ mod tests {
     }
 
     #[test]
-    fn the_template_validates_and_declares_the_okf_type() {
-        let rendered = render_template(
-            "Use Postgres",
-            "Store relational data in Postgres.",
-            AdrStatus::Proposed,
-            "2026-05-06",
+    fn a_status_from_another_types_vocabulary_is_rejected() {
+        let root = temp_dir("wrong-status");
+
+        let error = run_new(&root, &["Bulk Import", "--status", "shipped"])
+            .expect_err("`shipped` is a PRD status");
+        assert!(error.to_string().contains("proposed"), "{error}");
+        assert!(
+            !root.join("bulk-import.md").exists(),
+            "nothing is written when the status is invalid"
         );
 
-        let manifest = Manifest::parse_content(
-            Path::new("docs/adr/use-postgres.md"),
-            Path::new("docs/adr"),
-            &rendered,
-        )
-        .expect("template parses");
+        assert_eq!(
+            run_new(
+                &root,
+                &["Bulk Import", "--type", "prd", "--status", "shipped"]
+            )
+            .expect("valid for a PRD"),
+            0
+        );
 
-        assert_eq!(manifest.frontmatter.concept_type.as_deref(), Some(ADR_TYPE));
-        assert_eq!(manifest.concept_id, "use-postgres");
+        std::fs::remove_dir_all(&root).expect("cleanup");
+    }
 
-        let result = validator::validate(&manifest);
-        assert!(result.errors.is_empty(), "{:#?}", result.errors);
+    /// Every built-in type's template must parse and validate, or `new`
+    /// scaffolds a document that `check` immediately rejects.
+    #[test]
+    fn every_template_validates_and_declares_its_okf_type() {
+        for concept_type in types::ALL {
+            let rendered = render_template(
+                concept_type,
+                "Use Postgres",
+                "Store relational data in Postgres.",
+                concept_type.default_status(),
+                "2026-05-06",
+            );
+
+            let manifest = Manifest::parse_content(
+                Path::new("docs/adr/use-postgres.md"),
+                Path::new("docs/adr"),
+                &rendered,
+            )
+            .expect("template parses");
+
+            assert_eq!(
+                manifest.frontmatter.concept_type.as_deref(),
+                Some(concept_type.okf_type)
+            );
+            assert_eq!(manifest.concept_id, "use-postgres");
+
+            let result = validator::validate(&manifest);
+            assert!(
+                result.errors.is_empty(),
+                "{}: {:#?}",
+                concept_type.slug,
+                result.errors
+            );
+        }
+    }
+
+    #[test]
+    fn the_prd_template_scaffolds_its_optional_sections_and_extensions() {
+        let rendered = render_template(
+            &types::PRD,
+            "Bulk ADR Import",
+            "Import a directory of loose Markdown files.",
+            types::PRD.default_status(),
+            "2026-08-07",
+        );
+
+        assert!(rendered.contains("type: Product Requirements Document"));
+        assert!(rendered.contains("status: draft"));
+        assert!(rendered.contains("owner: []"));
+        assert!(rendered.contains("decisions: []"));
+        assert!(rendered.contains("## Status\n\nDraft\n"));
+        // Prompted for but not validated, so writing them is the default
+        // without being the price of entry.
+        assert!(rendered.contains("## Approach"));
+        assert!(rendered.contains("## Open Questions"));
+        assert!(
+            !rendered.contains("## Context"),
+            "`Context` is a decision record's word; a PRD has a Problem"
+        );
     }
 }

@@ -1,17 +1,22 @@
-//! ADR validation.
+//! Concept validation.
 //!
 //! Two layers stack here. OKF conformance (§9) is the floor: every concept
 //! parses, and every concept declares a non-empty `type`. On top of that
-//! arkouda enforces the ADR contract — a known `type`, a controlled `status`,
-//! an ISO 8601 `timestamp`, and Michael Nygard's body sections — because a
-//! bundle of ADRs is more useful when its concepts are uniform.
+//! arkouda enforces its own contract — a `type` it knows, a `status` from that
+//! type's vocabulary, an ISO 8601 `timestamp`, and that type's body sections —
+//! because a bundle is more useful when its concepts are uniform.
+//!
+//! The required frontmatter keys are the same for every type; everything else
+//! is read off the concept's [`ConceptType`] descriptor, so a document is
+//! judged against the contract it declares rather than against the ADR's.
 //!
 //! OKF's permissive-consumption rule (§9) shapes what is a warning rather than
-//! an error: an unknown declared OKF version and a stale `index.md` never
-//! fail a bundle.
+//! an error: an unknown declared OKF version, a stale `index.md`, and a
+//! concept reference that does not resolve never fail a bundle.
 
-use crate::adr::manifest::{ManifestError, split_content};
-use crate::adr::{ADR_TYPE, AdrStatus, Manifest, OKF_VERSION, is_valid_id, markdown};
+use crate::concept::manifest::{ManifestError, split_content};
+use crate::concept::types::{self, ConceptType};
+use crate::concept::{Manifest, OKF_VERSION, is_valid_id, markdown};
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -82,11 +87,11 @@ pub enum DiagnosticCode {
     E001,
     /// Required frontmatter field is empty.
     E002,
-    /// Status is not in the controlled status list.
+    /// Status is not in this concept type's vocabulary.
     E003,
     /// Concept id is not a lowercase slug.
     E004,
-    /// Frontmatter `type` is not the ADR concept type.
+    /// Frontmatter `type` is not a concept type arkouda knows.
     E005,
     /// Timestamp is not a valid ISO 8601 date or datetime.
     E006,
@@ -94,7 +99,7 @@ pub enum DiagnosticCode {
     E007,
     /// Top-level Markdown heading does not match title.
     E008,
-    /// Required Markdown section is missing.
+    /// A section this concept type requires is missing.
     E009,
     /// Concept id is duplicated.
     E010,
@@ -106,6 +111,9 @@ pub enum DiagnosticCode {
     E013,
     /// `index.md` does not match the concepts in the bundle. Warning.
     E014,
+    /// A frontmatter concept reference does not resolve to a loaded concept.
+    /// Warning.
+    E015,
 }
 
 impl fmt::Display for DiagnosticCode {
@@ -114,14 +122,17 @@ impl fmt::Display for DiagnosticCode {
     }
 }
 
-/// Validate a collection of parsed ADR concepts.
+/// Validate a collection of parsed concepts. Checks that need to see the
+/// whole collection — duplicate ids, and whether frontmatter references
+/// resolve — happen here.
 pub fn validate_collection(manifests: &[Manifest]) -> Vec<ValidationResult> {
     let mut results: Vec<ValidationResult> = manifests.iter().map(validate).collect();
     check_duplicate_ids(manifests, &mut results);
+    check_references(manifests, &mut results);
     results
 }
 
-/// Validate one parsed ADR concept.
+/// Validate one parsed concept against the type its frontmatter declares.
 pub fn validate(manifest: &Manifest) -> ValidationResult {
     let mut result = ValidationResult::default();
 
@@ -129,7 +140,11 @@ pub fn validate(manifest: &Manifest) -> ValidationResult {
         &mut result,
         "type",
         manifest.frontmatter.concept_type.as_deref(),
-        &format!("Add `type: {ADR_TYPE}` to the YAML frontmatter."),
+        &format!(
+            "Add `type:` to the YAML frontmatter. It selects the contract this \
+             concept is checked against; arkouda knows {}.",
+            types::okf_type_list()
+        ),
     );
     check_required_field(
         &mut result,
@@ -141,14 +156,21 @@ pub fn validate(manifest: &Manifest) -> ValidationResult {
         &mut result,
         "description",
         manifest.frontmatter.description.as_deref(),
-        "Add a `description` summarizing the decision itself (what was decided, \
-         not just the topic) in one sentence.",
+        "Add a `description` summarizing the concept itself (what was decided, or \
+         what is being built — not just the topic) in one sentence.",
     );
     check_required_field(
         &mut result,
         "status",
         manifest.frontmatter.status.as_deref(),
-        "Add `status: proposed` or another valid status.",
+        &match manifest.concept_type() {
+            Some(concept_type) => format!(
+                "Add `status: {}` or another value from: {}.",
+                concept_type.default_status().name,
+                concept_type.status_list()
+            ),
+            None => "Add a `status` from the vocabulary of this concept's `type`.".to_owned(),
+        },
     );
     check_required_field(
         &mut result,
@@ -157,17 +179,21 @@ pub fn validate(manifest: &Manifest) -> ValidationResult {
         "Add `timestamp: YYYY-MM-DD` to the YAML frontmatter.",
     );
 
-    if let Some(concept_type) = non_empty(manifest.frontmatter.concept_type.as_deref())
-        && concept_type != ADR_TYPE
+    let declared = non_empty(manifest.frontmatter.concept_type.as_deref());
+    let concept_type = declared.and_then(types::by_okf_type);
+
+    if let Some(declared) = declared
+        && concept_type.is_none()
     {
         result.errors.push(
             Diagnostic::new(
                 DiagnosticCode::E005,
-                format!("frontmatter `type` is `{concept_type}`, not `{ADR_TYPE}`"),
+                format!("frontmatter `type` is `{declared}`, which arkouda does not know"),
             )
             .with_hint(format!(
-                "arkouda manages a bundle of ADRs. Set `type: {ADR_TYPE}`, or move \
-                 this concept out of the ADR bundle."
+                "Use one of: {}. Silently skipping a document arkouda cannot check \
+                 would hide exactly the drift `check` exists to catch.",
+                types::okf_type_list()
             )),
         );
     }
@@ -175,16 +201,18 @@ pub fn validate(manifest: &Manifest) -> ValidationResult {
     check_concept_id(manifest, &mut result);
 
     if let Some(status) = non_empty(manifest.frontmatter.status.as_deref())
-        && status.parse::<AdrStatus>().is_err()
+        && let Some(concept_type) = concept_type
+        && concept_type.status(status).is_none()
     {
-        let valid = AdrStatus::ALL
-            .iter()
-            .map(AdrStatus::to_string)
-            .collect::<Vec<_>>()
-            .join(", ");
         result.errors.push(
-            Diagnostic::new(DiagnosticCode::E003, format!("invalid status `{status}`"))
-                .with_hint(format!("Use one of: {valid}.")),
+            Diagnostic::new(
+                DiagnosticCode::E003,
+                format!(
+                    "invalid status `{status}` for type `{}`",
+                    concept_type.okf_type
+                ),
+            )
+            .with_hint(format!("Use one of: {}.", concept_type.status_list())),
         );
     }
 
@@ -201,7 +229,13 @@ pub fn validate(manifest: &Manifest) -> ValidationResult {
     }
 
     check_title_heading(manifest, &mut result);
-    check_required_sections(manifest, &mut result);
+
+    // Without a type there is no section contract to check against, and
+    // borrowing another type's would be the assumption this design removes.
+    // The missing or unknown `type` is already reported, as E001 or E005.
+    if let Some(concept_type) = concept_type {
+        check_required_sections(manifest, concept_type, &mut result);
+    }
 
     result
 }
@@ -437,22 +471,61 @@ fn check_title_heading(manifest: &Manifest, result: &mut ValidationResult) {
     }
 }
 
-fn check_required_sections(manifest: &Manifest, result: &mut ValidationResult) {
+fn check_required_sections(
+    manifest: &Manifest,
+    concept_type: &ConceptType,
+    result: &mut ValidationResult,
+) {
     let sections: HashSet<String> = markdown::headings(&manifest.body)
         .into_iter()
         .filter(|heading| heading.level == markdown::SECTION_LEVEL)
         .map(|heading| heading.text.to_ascii_lowercase())
         .collect();
 
-    for required in ["status", "context", "decision", "consequences"] {
-        if !sections.contains(required) {
-            let cased = title_case(required);
+    for required in concept_type.required_sections {
+        if !sections.contains(&required.to_ascii_lowercase()) {
             result.errors.push(
                 Diagnostic::new(
                     DiagnosticCode::E009,
-                    format!("missing required Markdown section `## {cased}`"),
+                    format!("missing required Markdown section `## {required}`"),
                 )
-                .with_hint(format!("Add a `## {cased}` section to the ADR body.")),
+                .with_hint(format!(
+                    "Add a `## {required}` section; a {} requires it.",
+                    concept_type.okf_type
+                )),
+            );
+        }
+    }
+}
+
+/// Resolve every frontmatter concept reference against the loaded collection.
+///
+/// A dangling reference is a **warning**, not an error, because arkouda cannot
+/// tell a broken reference from an out-of-scope one: `arkouda check --dir
+/// docs/prd` loads one bundle, and a `decisions` entry pointing into
+/// `docs/adr` is then legitimately unresolvable. Failing there would make
+/// `check` depend on which directories the invocation happened to cover.
+fn check_references(manifests: &[Manifest], results: &mut [ValidationResult]) {
+    let known: HashSet<&str> = manifests
+        .iter()
+        .map(|manifest| manifest.concept_id.as_str())
+        .collect();
+
+    for (manifest, result) in manifests.iter().zip(results.iter_mut()) {
+        for (field, reference) in manifest.frontmatter.references() {
+            if known.contains(reference) {
+                continue;
+            }
+            result.warnings.push(
+                Diagnostic::new(
+                    DiagnosticCode::E015,
+                    format!("`{field}` references `{reference}`, which is not a loaded concept"),
+                )
+                .with_hint(
+                    "Use a bundle-relative concept id (`security/mtls`, not a path). If the \
+                     concept lives in a bundle this invocation did not load, widen `--dir` or \
+                     `dirs` to cover it.",
+                ),
             );
         }
     }
@@ -465,18 +538,10 @@ fn non_empty(value: Option<&str>) -> Option<&str> {
     })
 }
 
-fn title_case(value: &str) -> String {
-    let mut chars = value.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adr::Manifest;
+    use crate::concept::Manifest;
     use std::path::Path;
 
     const BUNDLE: &str = "docs/adr";
@@ -516,8 +581,46 @@ Consequences.
         .to_owned()
     }
 
+    fn good_prd() -> String {
+        "---
+type: Product Requirements Document
+title: Bulk ADR Import
+description: Import a directory of loose Markdown files as ADRs.
+status: draft
+timestamp: 2026-08-07
+---
+
+# Bulk ADR Import
+
+## Status
+
+Draft
+
+## Problem
+
+Problem.
+
+## Requirements
+
+Requirements.
+
+## Non-Goals
+
+Non-goals.
+
+## Success Metrics
+
+Metrics.
+"
+        .to_owned()
+    }
+
     fn codes(result: &ValidationResult) -> Vec<DiagnosticCode> {
         result.errors.iter().map(|d| d.code).collect()
+    }
+
+    fn warning_codes(result: &ValidationResult) -> Vec<DiagnosticCode> {
+        result.warnings.iter().map(|d| d.code).collect()
     }
 
     #[test]
@@ -525,6 +628,36 @@ Consequences.
         let manifest = parse("docs/adr/basic-adr-cli.md", &good_adr());
         let result = validate(&manifest);
         assert!(result.errors.is_empty(), "{:#?}", result.errors);
+    }
+
+    #[test]
+    fn validates_a_good_prd() {
+        let manifest = parse("docs/prd/bulk-adr-import.md", &good_prd());
+        let result = validate(&manifest);
+        assert!(result.errors.is_empty(), "{:#?}", result.errors);
+    }
+
+    #[test]
+    fn a_prd_is_not_checked_against_the_adr_section_set() {
+        // The whole point of the descriptor: a requirements document must not
+        // be asked for a `## Decision`, and an ADR must not be asked for
+        // `## Requirements`.
+        let prd = parse("docs/prd/bulk-adr-import.md", &good_prd());
+        assert!(validate(&prd).errors.is_empty());
+
+        let adr_sections_only = good_prd().replace("## Problem", "## Context");
+        let manifest = parse("docs/prd/bulk-adr-import.md", &adr_sections_only);
+        let result = validate(&manifest);
+        let messages: Vec<&str> = result
+            .errors
+            .iter()
+            .map(|diagnostic| diagnostic.message.as_str())
+            .collect();
+        assert_eq!(
+            messages,
+            ["missing required Markdown section `## Problem`"],
+            "borrowing the ADR's word for the problem is not enough"
+        );
     }
 
     #[test]
@@ -592,10 +725,30 @@ An ADR template looks like this:
     }
 
     #[test]
-    fn rejects_a_foreign_concept_type() {
+    fn rejects_a_type_arkouda_does_not_know() {
         let content = good_adr().replace("Architecture Decision Record", "BigQuery Table");
         let manifest = parse("docs/adr/basic-adr-cli.md", &content);
-        assert!(codes(&validate(&manifest)).contains(&DiagnosticCode::E005));
+        let result = validate(&manifest);
+        assert_eq!(
+            codes(&result),
+            [DiagnosticCode::E005],
+            "an unknown type is an error, and there is no section contract to \
+             check it against: {result:#?}"
+        );
+    }
+
+    #[test]
+    fn statuses_are_checked_against_the_declared_type() {
+        // `shipped` is valid for a PRD and invalid for an ADR; `accepted` is
+        // the other way round.
+        let adr = good_adr().replace("status: proposed", "status: shipped");
+        assert!(codes(&validate(&parse("docs/adr/x.md", &adr))).contains(&DiagnosticCode::E003));
+
+        let prd = good_prd().replace("status: draft", "status: accepted");
+        assert!(codes(&validate(&parse("docs/prd/x.md", &prd))).contains(&DiagnosticCode::E003));
+
+        let prd = good_prd().replace("status: draft", "status: in-review");
+        assert!(validate(&parse("docs/prd/x.md", &prd)).errors.is_empty());
     }
 
     #[test]
@@ -636,6 +789,45 @@ An ADR template looks like this:
         let results = validate_collection(&[left, right]);
         assert!(codes(&results[0]).contains(&DiagnosticCode::E010));
         assert!(codes(&results[1]).contains(&DiagnosticCode::E010));
+    }
+
+    #[test]
+    fn a_resolvable_reference_is_clean() {
+        let prd = good_prd().replace(
+            "status: draft",
+            "status: draft\ndecisions:\n  - basic-adr-cli",
+        );
+        let results = validate_collection(&[
+            parse("docs/prd/bulk-adr-import.md", &prd),
+            parse("docs/adr/basic-adr-cli.md", &good_adr()),
+        ]);
+        assert!(
+            results.iter().all(|r| r.warnings.is_empty()),
+            "{results:#?}"
+        );
+    }
+
+    #[test]
+    fn a_dangling_reference_warns_without_failing_the_bundle() {
+        let prd = good_prd().replace("status: draft", "status: draft\ndecisions:\n  - gone");
+        let results = validate_collection(&[parse("docs/prd/bulk-adr-import.md", &prd)]);
+        assert_eq!(warning_codes(&results[0]), [DiagnosticCode::E015]);
+        assert!(
+            results[0].errors.is_empty(),
+            "a reference into a bundle this run did not load is not a defect"
+        );
+    }
+
+    #[test]
+    fn superseded_by_is_resolved_too() {
+        // Parsed since it was introduced, never checked until now.
+        let content = good_adr().replace(
+            "status: proposed",
+            "status: superseded\nsuperseded_by: gone",
+        );
+        let results = validate_collection(&[parse("docs/adr/basic-adr-cli.md", &content)]);
+        assert_eq!(warning_codes(&results[0]), [DiagnosticCode::E015]);
+        assert!(results[0].warnings[0].message.contains("superseded_by"));
     }
 
     #[test]

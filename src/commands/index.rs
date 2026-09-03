@@ -1,14 +1,14 @@
 //! Generate the OKF §6 `index.md` for each configured bundle.
 
-use crate::adr::index;
 use crate::cli::Cli;
+use crate::concept::index;
 use crate::error::{ArkoudaError, Result};
 use colored::Colorize;
 use std::path::Path;
 
 /// Run the index command.
 pub fn run(cli: &Cli) -> Result<i32> {
-    let dirs = super::effective_dirs(cli)?;
+    let dirs = super::search_dirs(cli)?;
 
     for bundle in super::load_bundles(&dirs)? {
         // Writing an index from a partial view of the bundle would silently

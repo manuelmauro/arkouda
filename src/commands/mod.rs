@@ -1,17 +1,18 @@
 //! CLI command implementations.
 
-use crate::adr::{Manifest, discovery};
 use crate::cli::Cli;
-use crate::config;
+use crate::concept::types::ConceptType;
+use crate::concept::{Manifest, discovery};
+use crate::config::{self, Dirs};
 use crate::error::{ArkoudaError, Result};
 use std::path::{Path, PathBuf};
 
 pub mod check;
 pub mod completions;
-pub mod decision;
 pub mod index;
 pub mod list;
 pub mod new;
+pub mod section;
 
 /// An OKF knowledge bundle: a root directory and the concepts inside it.
 /// Concept ids are relative to the root, so every concept must be loaded
@@ -38,11 +39,19 @@ pub(crate) struct DiscoveredBundle {
     pub complete: bool,
 }
 
-/// Resolve the effective ADR bundle roots for this invocation: CLI flag wins,
-/// then `.arkoudarc.toml`, then the default.
-pub(crate) fn effective_dirs(cli: &Cli) -> Result<Vec<PathBuf>> {
+/// Resolve the effective bundle roots for this invocation: CLI flag wins,
+/// then `.arkoudarc.toml`, then each type's default directory.
+pub(crate) fn effective_dirs(cli: &Cli) -> Result<Dirs> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     config::effective_dirs(cli.dir.as_deref(), &cwd)
+}
+
+/// The roots `list`, `check`, `section`, and `index` read: every configured
+/// directory, whatever type it was configured for. A concept's type is a fact
+/// about its frontmatter, not about where it sits, so nothing may be skipped
+/// on the strength of a directory alone.
+pub(crate) fn search_dirs(cli: &Cli) -> Result<Vec<PathBuf>> {
+    Ok(effective_dirs(cli)?.union())
 }
 
 /// The bundle root for a configured directory. When the directory is really a
@@ -76,7 +85,7 @@ pub(crate) fn discover_bundles(dirs: &[PathBuf]) -> Result<Vec<DiscoveredBundle>
     }
 
     if total_concepts == 0 {
-        return Err(ArkoudaError::NoAdrsFound {
+        return Err(ArkoudaError::NoConceptsFound {
             path: format_dirs(dirs),
         });
     }
@@ -142,9 +151,31 @@ fn format_dirs(dirs: &[PathBuf]) -> String {
     }
 }
 
-/// The first effective directory — used by `new` as the write target.
-pub(crate) fn primary_dir(dirs: &[PathBuf]) -> &Path {
-    dirs.first()
+/// The directory `new` writes a concept of this type into: the first root
+/// configured for it.
+pub(crate) fn write_dir<'a>(dirs: &'a Dirs, concept_type: &ConceptType) -> Result<&'a Path> {
+    dirs.for_type(concept_type)
+        .first()
         .map(PathBuf::as_path)
-        .expect("effective_dirs always returns at least one entry")
+        .ok_or_else(|| ArkoudaError::NoDirForType {
+            slug: concept_type.slug.to_owned(),
+        })
+}
+
+/// Find the one concept `query` names, by concept id, filename stem, or
+/// filename.
+pub(crate) fn resolve_one<'a>(manifests: &'a [Manifest], query: &str) -> Result<&'a Manifest> {
+    let matches: Vec<&Manifest> = manifests
+        .iter()
+        .filter(|manifest| matches_lookup(manifest, query))
+        .collect();
+
+    match matches.as_slice() {
+        [] => Err(ArkoudaError::ConceptNotFound(query.to_owned())),
+        [manifest] => Ok(manifest),
+        _ => Err(ArkoudaError::AmbiguousConcept {
+            query: query.to_owned(),
+            count: matches.len(),
+        }),
+    }
 }
