@@ -1,53 +1,89 @@
 //! Error types for the arkouda crate.
 
-use crate::adr::manifest::ManifestError;
+use crate::concept::manifest::ManifestError;
 use thiserror::Error;
 
-/// Errors that can occur during ADR operations.
+/// Errors that can occur during arkouda operations.
 #[derive(Error, Debug)]
 pub enum ArkoudaError {
-    /// No ADR files were found at the configured path.
-    #[error("No ADR files found in {path}")]
-    NoAdrsFound {
+    /// No concept documents were found at the configured paths.
+    #[error("No concepts found in {path}")]
+    NoConceptsFound {
         /// Path that was searched.
         path: String,
     },
 
-    /// An ADR could not be found by id or filename.
-    #[error("ADR not found: {0}")]
-    AdrNotFound(String),
+    /// A concept could not be found by id or filename.
+    #[error("Concept not found: {0}")]
+    ConceptNotFound(String),
 
-    /// More than one ADR matched a lookup.
-    #[error("ADR lookup '{query}' is ambiguous; matched {count} files")]
-    AmbiguousAdr {
+    /// More than one concept matched a lookup.
+    #[error("Concept lookup '{query}' is ambiguous; matched {count} files")]
+    AmbiguousConcept {
         /// Lookup query.
         query: String,
         /// Number of matching files.
         count: usize,
     },
 
-    /// A requested Markdown section was not present in the ADR.
-    #[error("ADR '{id}' has no `## {section}` section")]
+    /// A requested Markdown section was not present in the concept.
+    #[error("Concept '{id}' has no `## {section}` section")]
     SectionNotFound {
-        /// ADR id.
+        /// Concept id.
         id: String,
         /// Requested section name.
         section: String,
     },
 
-    /// An ADR id is invalid.
+    /// `arkouda section` was asked for a concept's primary section, but the
+    /// concept declares a type arkouda does not know, so there is none.
     #[error(
-        "Invalid ADR id '{0}': must be lowercase alphanumeric words separated by single hyphens"
+        "Concept '{id}' declares type '{concept_type}', which arkouda does not know, so it has \
+         no default section; name the section explicitly"
+    )]
+    UnknownConceptType {
+        /// Concept id.
+        id: String,
+        /// The `type` the concept declares.
+        concept_type: String,
+    },
+
+    /// `arkouda new --status` named a value outside the chosen type's
+    /// vocabulary.
+    #[error("Invalid status '{status}' for type '{concept_type}'; use one of: {valid}")]
+    InvalidStatus {
+        /// The status that was asked for.
+        status: String,
+        /// The OKF type it was asked for.
+        concept_type: String,
+        /// The vocabulary that type does accept.
+        valid: String,
+    },
+
+    /// A concept id is invalid.
+    #[error(
+        "Invalid concept id '{0}': must be lowercase alphanumeric words separated by single hyphens"
     )]
     InvalidId(String),
 
-    /// A new ADR would overwrite an existing file.
-    #[error("ADR '{id}' already exists at {path}")]
-    AdrExists {
-        /// ADR id.
+    /// A new concept would overwrite an existing file.
+    #[error("Concept '{id}' already exists at {path}")]
+    ConceptExists {
+        /// Concept id.
         id: String,
         /// Existing file path.
         path: String,
+    },
+
+    /// `arkouda new` was asked for a type the configuration gives no directory
+    /// to write into.
+    #[error(
+        "No directory is configured for `--type {slug}`; add `{slug} = [\"<path>\"]` under \
+         `[dirs]` in .arkoudarc.toml, or pass --dir"
+    )]
+    NoDirForType {
+        /// The type's CLI slug.
+        slug: String,
     },
 
     /// An operation that rewrites the bundle was asked to run against a single
@@ -60,7 +96,7 @@ pub enum ArkoudaError {
         path: String,
     },
 
-    /// Parsing an ADR manifest failed.
+    /// Parsing a concept document failed.
     #[error("{path}: {source}")]
     Manifest {
         /// File path.

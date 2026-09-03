@@ -271,7 +271,7 @@ impl Command {
     pub fn name(&self) -> &'static str {
         match self {
             Self::List(_) => "list",
-            Self::Decision(_) => "decision",
+            Self::Section(_) => "section",
             Self::Check => "check",
             Self::New(_) => "new",
             Self::Index => "index",
@@ -312,22 +312,21 @@ mod tests {
     fn real_commands_are_recorded() {
         assert!(command_of(&["arkouda", "check"]).is_recorded());
         assert!(command_of(&["arkouda", "list", "-l"]).is_recorded());
-        assert!(command_of(&["arkouda", "decision", "use-postgres"]).is_recorded());
+        assert!(command_of(&["arkouda", "section", "use-postgres"]).is_recorded());
         assert!(command_of(&["arkouda", "new", "Use Postgres"]).is_recorded());
     }
 
     #[test]
     fn redacts_paths_and_titles_keeps_flags_and_slugs() {
         let argv = vec![
-            "decision".to_string(),
+            "section".to_string(),
             "use-postgres".to_string(),
-            "--section".to_string(),
             "consequences".to_string(),
         ];
-        let args = redact_args(&argv, Some("decision"));
+        let args = redact_args(&argv, Some("section"));
         assert_eq!(
             args,
-            vec!["use-postgres", "--section", "consequences"]
+            vec!["use-postgres", "consequences"]
                 .into_iter()
                 .map(String::from)
                 .collect::<Vec<_>>()
@@ -355,7 +354,7 @@ mod tests {
 
     #[test]
     fn bare_flag_tokens_pass_through() {
-        assert_eq!(redact_token("--section"), "--section");
+        assert_eq!(redact_token("--type"), "--type");
         assert_eq!(redact_token("-l"), "-l");
     }
 
@@ -396,8 +395,8 @@ mod tests {
         let event = Event {
             ts: "2026-05-20T14:32:11Z".to_owned(),
             version: "0.0.0",
-            command: Some("decision"),
-            args: vec!["use-postgres".to_owned(), "--section".to_owned()],
+            command: Some("section"),
+            args: vec!["use-postgres".to_owned(), "consequences".to_owned()],
             exit_code: 0,
             duration_ms: 42,
             agent: Some("claude-code"),
@@ -406,7 +405,7 @@ mod tests {
         };
         let json: serde_json::Value =
             serde_json::from_slice(&serde_json::to_vec(&event).unwrap()).unwrap();
-        assert_eq!(json["command"], "decision");
+        assert_eq!(json["command"], "section");
         assert_eq!(json["exit_code"], 0);
         assert_eq!(json["duration_ms"], 42);
         assert_eq!(json["agent"], "claude-code");

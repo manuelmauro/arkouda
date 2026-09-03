@@ -1,21 +1,23 @@
 //! Command-line interface definitions.
 
-use crate::adr::AdrStatus;
+use crate::concept::types;
+use clap::builder::PossibleValuesParser;
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 /// Main CLI application.
 #[derive(Parser)]
 #[command(name = "arkouda")]
-#[command(author, version, about = "Navigate and validate Architecture Decision Records", long_about = None)]
+#[command(author, version, about = "Navigate and validate decision and requirements documents", long_about = None)]
 #[command(propagate_version = true)]
 pub struct Cli {
     /// The subcommand to run.
     #[command(subcommand)]
     pub command: Command,
 
-    /// Directory containing ADR Markdown files. Overrides any `dirs` from
-    /// `.arkoudarc.toml`. When neither is set, defaults to `docs/adr`.
+    /// Directory containing concept Markdown files. Overrides any `dirs` from
+    /// `.arkoudarc.toml`, for every type. When neither is set, each type
+    /// defaults to its own directory (`docs/adr`, `docs/prd`).
     #[arg(long, global = true, env = "ADR_DIR")]
     pub dir: Option<PathBuf>,
 
@@ -27,17 +29,17 @@ pub struct Cli {
 /// Available CLI commands.
 #[derive(Subcommand)]
 pub enum Command {
-    /// List ADRs in the collection. Prints one path per line; `-l` for the
+    /// List concepts in the collection. Prints one path per line; `-l` for the
     /// table.
     List(ListArgs),
 
-    /// Print one ADR's `## Decision` section by id; `--section` to pick another.
-    Decision(DecisionArgs),
+    /// Print one concept's primary section by id, or a section you name.
+    Section(SectionArgs),
 
-    /// Validate OKF conformance, ADR frontmatter, and Markdown structure.
+    /// Validate OKF conformance, frontmatter, and Markdown structure.
     Check,
 
-    /// Create a new ADR from the standard template.
+    /// Create a new concept from its type's template.
     New(NewArgs),
 
     /// Regenerate each bundle's `index.md` directory listing.
@@ -51,46 +53,55 @@ pub enum Command {
 /// Arguments for the `list` command.
 #[derive(clap::Args)]
 pub struct ListArgs {
-    /// Sort ADRs by this field.
+    /// Sort concepts by this field.
     #[arg(long, default_value = "id", value_enum)]
     pub sort: SortBy,
 
-    /// Long form: print `ID STATUS TIMESTAMP PATH TITLE — DESCRIPTION`
+    /// Show only concepts of this type.
+    #[arg(long = "type", value_name = "TYPE", value_parser = PossibleValuesParser::new(types::slugs()))]
+    pub concept_type: Option<String>,
+
+    /// Long form: print `ID TYPE STATUS TIMESTAMP PATH TITLE — DESCRIPTION`
     /// instead of just paths. Headerless either way.
     #[arg(short = 'l', long)]
     pub long: bool,
 }
 
-/// Arguments for the `decision` command.
+/// Arguments for the `section` command.
 #[derive(clap::Args)]
-pub struct DecisionArgs {
-    /// ADR concept id, filename stem, or filename.
+pub struct SectionArgs {
+    /// Concept id, filename stem, or filename.
     pub id: String,
 
-    /// Print this `## <name>` section instead of `## Decision`. Errors if the
-    /// ADR has no such section. Common values: `context`, `consequences`,
-    /// `status`.
-    #[arg(long)]
-    pub section: Option<String>,
+    /// Section to print. Defaults to the concept type's primary section:
+    /// `Decision` for an ADR, `Requirements` for a PRD. Errors if the concept
+    /// has no such section.
+    pub name: Option<String>,
 }
 
 /// Arguments for the `new` command.
 #[derive(clap::Args)]
 pub struct NewArgs {
-    /// ADR title.
+    /// Concept title.
     pub title: String,
+
+    /// Type of concept to create. Selects the template, the `type` string, the
+    /// status vocabulary, and the target directory.
+    #[arg(long = "type", value_name = "TYPE", default_value = "adr", value_parser = PossibleValuesParser::new(types::slugs()))]
+    pub concept_type: String,
 
     /// Explicit concept id, used as the filename stem. Defaults to a slug
     /// generated from the title.
     #[arg(long)]
     pub id: Option<String>,
 
-    /// Initial ADR status.
-    #[arg(long, default_value = "proposed", value_enum)]
-    pub status: AdrStatus,
+    /// Initial status. Must be one of the chosen type's values; defaults to
+    /// the first of its lifecycle (`proposed` for an ADR, `draft` for a PRD).
+    #[arg(long)]
+    pub status: Option<String>,
 
-    /// One-line summary of the decision (what was decided, not just the
-    /// topic). Defaults to a TODO placeholder.
+    /// One-line summary of what was decided, or what is being built. Defaults
+    /// to a TODO placeholder.
     #[arg(long)]
     pub description: Option<String>,
 }
@@ -134,14 +145,15 @@ pub enum Shell {
     Elvish,
 }
 
-/// Field used to sort ADRs.
+/// Field used to sort concepts.
 #[derive(ValueEnum, Clone, Copy, Debug)]
 #[value(rename_all = "kebab-case")]
 pub enum SortBy {
     /// Sort by concept id.
     Id,
-    /// Sort by decision timestamp.
+    /// Sort by timestamp.
     Timestamp,
-    /// Sort by ADR status.
+    /// Sort by status. Statuses compare as strings, so a mixed collection
+    /// interleaves two vocabularies; pair it with `--type`.
     Status,
 }

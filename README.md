@@ -3,11 +3,13 @@
 [![CI](https://github.com/manuelmauro/arkouda/actions/workflows/ci.yml/badge.svg)](https://github.com/manuelmauro/arkouda/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/arkouda.svg)](https://crates.io/crates/arkouda)
 
-**AI-native CLI for Architecture Decision Records — built for AI coding agents.**
+**AI-native CLI for architecture decisions and product requirements — built for AI coding agents.**
 
-Arkouda ships a portable [agent skill](skills/use-arkouda/SKILL.md) that teaches AI assistants to check prior decisions before making non-trivial choices and capture new ones afterwards. Output is structured for piping, so agents compose ADRs with their existing shell toolkit (`rg`, `cat`, `awk`). The schema is strict and validation diagnostics carry machine-readable error codes (`E000`–`E014`) — easy for an agent to act on, easy for CI to gate on.
+Arkouda ships a portable [agent skill](skills/use-arkouda/SKILL.md) that teaches AI assistants to check what a project already decided — and what it is already trying to build — before making non-trivial choices, and to capture the outcome afterwards. Output is structured for piping, so agents compose these documents with their existing shell toolkit (`rg`, `cat`, `awk`). The schema is strict and validation diagnostics carry machine-readable error codes (`E000`–`E015`) — easy for an agent to act on, easy for CI to gate on.
 
-ADRs are stored as an **[Open Knowledge Format][okf] (OKF) v0.1 knowledge bundle**: a directory of Markdown concepts with YAML frontmatter, readable by any OKF-aware tool without special-casing arkouda. Arkouda parses the bundle, validates conformance plus its own ADR contract, scaffolds new entries, generates the `index.md` listing, and pulls a named `## Section` out for you. Anything a one-line shell pipeline does well — content search, counting, slicing, full-file printing — is left to `rg`, `grep`, `awk`, `cat`, and friends. See [`docs/adr/adopt-okf.md`](docs/adr/adopt-okf.md), [`docs/adr/defer-to-unix-tools.md`](docs/adr/defer-to-unix-tools.md), and [`docs/adr/ls-style-list-and-decision.md`](docs/adr/ls-style-list-and-decision.md) for the rationale.
+Arkouda has **two built-in concept types**: the **Architecture Decision Record** (ADR), for why the software is built the way it is, and the **Product Requirements Document** (PRD), for what it is supposed to do. Each has its own status vocabulary, required sections, template, and default directory; a PRD's `decisions` frontmatter key points at the ADRs that shaped it, so a requirement and its rationale are one lookup apart. See [`docs/adr/support-product-requirements-documents.md`](docs/adr/support-product-requirements-documents.md).
+
+Documents are stored as an **[Open Knowledge Format][okf] (OKF) v0.1 knowledge bundle**: a directory of Markdown concepts with YAML frontmatter, readable by any OKF-aware tool without special-casing arkouda. A concept's `type` is a frontmatter field, so one bundle may hold both kinds. Arkouda parses the bundle, validates conformance plus its own contract for whichever type each concept declares, scaffolds new entries, generates the `index.md` listing, and pulls a named `## Section` out for you. Anything a one-line shell pipeline does well — content search, counting, slicing, full-file printing — is left to `rg`, `grep`, `awk`, `cat`, and friends. See [`docs/adr/adopt-okf.md`](docs/adr/adopt-okf.md), [`docs/adr/defer-to-unix-tools.md`](docs/adr/defer-to-unix-tools.md), and [`docs/adr/ls-style-list-and-decision.md`](docs/adr/ls-style-list-and-decision.md) for the rationale.
 
 [okf]: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md
 
@@ -27,20 +29,22 @@ make install
 ## Quick Start
 
 ```bash
-arkouda list                         # one ADR path per line — pipe straight to xargs/rg/cat
-arkouda list -l                      # long form: id, status, timestamp, path, title — description
+arkouda list                         # one path per line — pipe straight to xargs/rg/cat
+arkouda list -l                      # long form: id, type, status, timestamp, path, title — description
+arkouda list --type prd              # just the requirements documents
 arkouda check                        # validate OKF conformance + Markdown structure
-arkouda new "Use Postgres"           # scaffold docs/adr/use-postgres.md
-arkouda index                        # regenerate docs/adr/index.md
-arkouda decision use-postgres        # print the Decision section
-arkouda decision use-postgres \
-  --section context                  # print another section's body
-cat docs/adr/index.md                # every decision at a glance
+arkouda new "Use Postgres"           # scaffold docs/adr/use-postgres.md (an ADR)
+arkouda new "Bulk Import" --type prd # scaffold docs/prd/bulk-import.md (a PRD)
+arkouda index                        # regenerate each bundle's index.md
+arkouda section use-postgres         # print the primary section — Decision for an ADR
+arkouda section bulk-import          # ...and Requirements for a PRD
+arkouda section use-postgres context # print another section's body
+cat docs/adr/index.md                # every concept at a glance
 rg postgres docs/adr/                # content search — use rg/grep, not arkouda
 
 # Pipe-friendly: list emits paths, shell takes it from there
 arkouda list | xargs rg postgres
-arkouda list -l | awk '$2=="accepted" {print $4}' | xargs cat
+arkouda list -l | awk '$3=="accepted" {print $5}' | xargs cat
 ```
 
 Run `arkouda --help` and `arkouda <subcommand> --help` for the full surface.
@@ -49,22 +53,38 @@ Run `arkouda --help` and `arkouda <subcommand> --help` for the full surface.
 
 | Command    | Description                                                                |
 | ---------- | -------------------------------------------------------------------------- |
-| `list`     | Print one ADR path per line; `-l` for the `id status timestamp path title — description` table |
-| `decision` | Print one ADR's `## Decision` section; `--section <name>` to pick another  |
+| `list`     | Print one path per line; `-l` for the `id type status timestamp path title — description` table; `--type` to filter |
+| `section`  | Print one concept's primary section (`Decision` for an ADR, `Requirements` for a PRD); name a section to pick another |
 | `check`    | Validate OKF conformance, frontmatter, concept ids, and Markdown structure |
-| `new`      | Scaffold a new ADR from the standard template                              |
+| `new`      | Scaffold a new concept from its type's template (`--type adr\|prd`)         |
 | `index`    | Regenerate each bundle's `index.md` directory listing (OKF §6)             |
 | `self completions` | Print a shell completion script (`bash`, `zsh`, `fish`, `powershell`, `elvish`) |
 
 Global flags: `--dir <path>` (also `ADR_DIR`), `-q/--quiet`.
 
-## ADR shape
+## Concept shape
 
-An ADR is an OKF *concept*. Its **concept id is its path within the bundle**, minus the `.md` suffix — so `docs/adr/use-postgres.md` is `use-postgres`, and a nested `docs/adr/security/mtls.md` is `security/mtls`. There is no `id` frontmatter key.
+Every document is an OKF *concept*. Its **concept id is its path within the bundle**, minus the `.md` suffix — so `docs/adr/use-postgres.md` is `use-postgres`, and a nested `docs/adr/security/mtls.md` is `security/mtls`. There is no `id` frontmatter key.
+
+`type` decides which contract a concept is checked against. The required frontmatter keys are the same for both types — `type`, `title`, `description`, `status`, `timestamp` — and that set is *arkouda's* profile, not OKF's: OKF v0.1 requires only `type`, and everything else arkouda insists on is layered on top.
+
+| | ADR | PRD |
+| --- | --- | --- |
+| `--type` | `adr` | `prd` |
+| OKF `type` | `Architecture Decision Record` | `Product Requirements Document` |
+| statuses | `proposed`, `accepted`, `superseded`, `deprecated`, `rejected` | `draft`, `in-review`, `approved`, `shipped`, `abandoned`, `superseded` |
+| required sections | `Status`, `Context`, `Decision`, `Consequences` | `Status`, `Problem`, `Requirements`, `Non-Goals`, `Success Metrics` |
+| primary section | `Decision` | `Requirements` |
+| default directory | `docs/adr` | `docs/prd` |
+| extensions | `deciders`, `superseded_by` | `owner`, `target_release`, `decisions`, `superseded_by` |
+
+Types are **not** user-definable. Apart from `Status`, the two share no section headings — a PRD's problem statement is not a decision record's context, and pretending otherwise would make the ADR vocabulary look universal.
+
+### An ADR
 
 ```markdown
 ---
-type: Architecture Decision Record   # required by OKF; arkouda requires this exact value
+type: Architecture Decision Record   # required by OKF; selects this contract
 title: Use Postgres
 description: One-line summary of the decision (what was decided).
 tags: []                             # optional
@@ -92,32 +112,82 @@ What we decided.
 What follows from the decision.
 ```
 
-`type`, `title`, `description`, `tags`, and `timestamp` are OKF's own fields; `status`, `deciders`, and `superseded_by` are producer extensions, which OKF §4.1 explicitly permits.
+### A PRD
 
-Required keys: `type`, `title`, `description`, `status`, `timestamp`. Required body sections (case-insensitive H2): `Status`, `Context`, `Decision`, `Consequences`. `arkouda check` reports each violation with a code (`E000`–`E014`) and a fix hint.
+```markdown
+---
+type: Product Requirements Document
+title: Bulk ADR Import
+description: One-line summary of what is being built and for whom.
+tags: []
+timestamp: 2026-08-07
+status: draft                        # draft | in-review | approved | shipped | abandoned | superseded
+resource: https://github.com/org/repo/issues/42   # optional: the tracker item
+owner: []                            # optional; mirrors an ADR's deciders
+target_release: 2026-09-01           # optional
+decisions:                           # optional; concept ids of the ADRs that shaped this
+  - adopt-okf
+---
+
+# Bulk ADR Import                    # H1 must equal title
+
+## Status
+
+Draft
+
+## Problem
+
+Who has it, why it matters, and why now.
+
+## Approach                          # scaffolded, not required
+
+The shape of the solution, in a paragraph.
+
+## Requirements
+
+What the software must do. The primary section.
+
+## Non-Goals
+
+What this explicitly does not cover.
+
+## Success Metrics
+
+How we will know it worked.
+
+## Open Questions                    # scaffolded, not required
+```
+
+`decisions` is frontmatter rather than a `## Decisions` section on purpose: a concept id is bundle-relative, so it survives pointing `prd` at a different directory, and a list of ids can be *checked*, where Markdown prose cannot. `arkouda check` resolves both `decisions` and `superseded_by` against the loaded collection and reports a dangling reference as `E015`.
+
+`arkouda check` reports each violation with a code (`E000`–`E015`) and a fix hint.
 
 ### Bundle layout
 
 ```text
-docs/adr/                 # the bundle root
+docs/adr/                 # a bundle root
 ├── index.md              # generated by `arkouda index`; declares okf_version
 ├── log.md                # optional; reserved by OKF, validated but not generated
 ├── use-postgres.md       # concept id: use-postgres
 └── security/
     └── mtls.md           # concept id: security/mtls
+docs/prd/                 # another bundle root
+└── bulk-adr-import.md    # concept id: bulk-adr-import
 ```
 
-`index.md` and `log.md` are reserved by OKF §3.1 and are never treated as ADRs. Discovery recurses into subdirectories.
+`index.md` and `log.md` are reserved by OKF §3.1 and are never treated as concepts. Discovery recurses into subdirectories.
 
-`arkouda index` writes the bundle-root `index.md`: every concept grouped under its status, each with its one-line description — the whole collection legible in one file, which is what OKF calls progressive disclosure. `arkouda new` refreshes an existing index but never creates one, since OKF makes indexes optional.
+The per-type directories are a default write target and a search scope, not a schema: type comes from frontmatter, so a single bundle may hold ADRs and PRDs side by side if you prefer.
 
-Following OKF's permissive-consumption rule (§9), two diagnostics are **warnings** and never fail the run: `E013` (the bundle declares an OKF version arkouda doesn't implement) and `E014` (`index.md` is stale — run `arkouda index`).
+`arkouda index` writes each bundle-root `index.md`: every concept under `# <Type>` and then `## <Status>`, each with its one-line description — the whole collection legible in one file, which is what OKF calls progressive disclosure. Nesting is uniform, so a single-type bundle still carries the type heading and consumers parse one shape. `arkouda new` refreshes an existing index but never creates one, since OKF makes indexes optional.
+
+Following OKF's permissive-consumption rule (§9), three diagnostics are **warnings** and never fail the run: `E013` (the bundle declares an OKF version arkouda doesn't implement), `E014` (`index.md` is stale — run `arkouda index`), and `E015` (a `decisions` or `superseded_by` reference does not resolve — which may simply mean it points into a bundle this invocation did not load).
 
 ## Configuration
 
-`--dir <path>` (and the `ADR_DIR` env var) point arkouda at a single directory and override everything else. With neither set, arkouda walks up from the working directory looking for `.arkoudarc.toml`; if found, its `dirs` list is used. With nothing configured, the default is `docs/adr`.
+`--dir <path>` (and the `ADR_DIR` env var) point arkouda at a single directory and override everything else, for every type. With neither set, arkouda walks up from the working directory looking for `.arkoudarc.toml`; if found, its `dirs` entry is used. With nothing configured, each type falls back to its own default: `docs/adr` and `docs/prd`.
 
-`.arkoudarc.toml` lists one or more directories — useful for monorepos that keep ADRs per service or area:
+`dirs` takes two forms. The **flat** form is one list every type shares — useful for monorepos that keep documents per service or area:
 
 ```toml
 dirs = [
@@ -127,11 +197,19 @@ dirs = [
 ]
 ```
 
-Relative paths resolve against the location of the config file, so the same file works from any subdirectory. `arkouda list`, `check`, and `decision` aggregate across every listed directory; `arkouda new` writes into the first one (use `--dir` to target another).
+The **typed** form gives each type its own roots:
 
-| Setting   | Default     | Override (low → high precedence)                         |
-| --------- | ----------- | -------------------------------------------------------- |
-| ADR dirs  | `docs/adr`  | `.arkoudarc.toml` `dirs` → `ADR_DIR=<path>` → `--dir <path>` |
+```toml
+[dirs]
+adr = ["docs/adr"]
+prd = ["docs/prd"]
+```
+
+Both parse into the same model: a type-to-roots map, plus the union of every root. Relative paths resolve against the location of the config file, so the same file works from any subdirectory. `arkouda list`, `check`, `section`, and `index` work over the union — a concept's type is a fact about its frontmatter, not about where it sits, so nothing is skipped on the strength of a directory. `arkouda new` writes into the first root configured for the type it is creating (use `--dir` to target another). A typed table is a complete declaration: a type it does not mention has no root, and `arkouda new` for that type says so rather than inventing a directory.
+
+| Setting   | Default                    | Override (low → high precedence)                         |
+| --------- | -------------------------- | -------------------------------------------------------- |
+| Bundle dirs | `docs/adr`, `docs/prd`   | `.arkoudarc.toml` `dirs` → `ADR_DIR=<path>` → `--dir <path>` |
 
 ## Shell completions
 
@@ -152,7 +230,7 @@ arkouda self completions fish | source
 
 Arkouda records one JSON event per invocation to a local file under your OS state directory (`~/Library/Application Support/arkouda/telemetry.jsonl` on macOS, `$XDG_STATE_HOME/arkouda/telemetry.jsonl` or `~/.local/state/arkouda/telemetry.jsonl` elsewhere). The data never leaves your machine — there is no network sink. The goal is to learn how AI coding agents actually invoke arkouda so future surface decisions are informed by usage rather than guesses.
 
-Each event captures the subcommand, redacted argv (paths and free-text titles are replaced with `<path>` / `<title>` markers; flag names and short slugs pass through), exit code, duration, and a short agent identifier derived from a small env-var allowlist (`CLAUDECODE` → `claude-code`, `CURSOR_AGENT` → `cursor`, `AIDER` → `aider`). ADR titles, descriptions, and contents are never recorded. Write failures are silently swallowed; the log rotates at 10 MiB keeping one prior file.
+Each event captures the subcommand, redacted argv (paths and free-text titles are replaced with `<path>` / `<title>` markers; flag names and short slugs pass through), exit code, duration, and a short agent identifier derived from a small env-var allowlist (`CLAUDECODE` → `claude-code`, `CURSOR_AGENT` → `cursor`, `AIDER` → `aider`). Concept titles, descriptions, and contents are never recorded. Write failures are silently swallowed; the log rotates at 10 MiB keeping one prior file.
 
 Telemetry is on by default. Opt out per-session with `ARKOUDA_TELEMETRY=0` or per-project in `.arkoudarc.toml`:
 
@@ -166,16 +244,17 @@ See [`docs/adr/telemetry-for-agent-command-invocations.md`](docs/adr/telemetry-f
 
 [`skills/use-arkouda/SKILL.md`](skills/use-arkouda/SKILL.md) is a portable, [skilo](https://github.com/manuelmauro/skilo)-validated agent skill — drop it into any project that uses arkouda. It teaches an AI coding agent to:
 
-- **Before deciding** — search prior ADRs (`arkouda list | xargs rg -i <topic>`) so the agent doesn't redo a debate that's already in the file, or unknowingly undo a deliberate decision.
-- **After deciding** — capture the outcome with `arkouda new "<title>" --description "<one-line decision summary>"` and run `arkouda check` to verify the new ADR validates.
-- **Use the subcommands correctly** — including the `## Decision`-by-default contract of `arkouda decision`, the structured pipe-friendly output of `arkouda list`, and the `E000`–`E014` validator diagnostics with their fix hints.
+- **Before deciding or building** — search what is already recorded (`arkouda list | xargs rg -i <topic>`) so the agent doesn't redo a debate that's already in the file, unknowingly undo a deliberate decision, or build something the requirements already rule out.
+- **After deciding** — capture the outcome with `arkouda new "<title>" --description "<one-line decision summary>"` and run `arkouda check` to verify it validates.
+- **Choose the right type** — an ADR for why the software is built this way, a PRD for what it is supposed to do, linked by the PRD's `decisions` key.
+- **Use the subcommands correctly** — including the primary-section-by-default contract of `arkouda section`, the structured pipe-friendly output of `arkouda list`, and the `E000`–`E015` validator diagnostics with their fix hints.
 
-The skill is repo-agnostic: it discovers ADR paths via `arkouda list` rather than hardcoding `docs/adr/`, so it works across monorepos that use `.arkoudarc.toml` to point at multiple ADR directories.
+The skill is repo-agnostic: it discovers paths via `arkouda list` rather than hardcoding `docs/adr/`, so it works across monorepos that use `.arkoudarc.toml` to point at multiple directories.
 
 ## CI integration
 
 ```yaml
-- name: Validate ADRs
+- name: Validate decision and requirements documents
   run: |
     curl -sSfL https://raw.githubusercontent.com/manuelmauro/arkouda/main/install.sh | sh
     arkouda check
@@ -185,7 +264,7 @@ The skill is repo-agnostic: it discovers ADR paths via `arkouda list` rather tha
 
 ## Acknowledgements
 
-The ADR body schema (`## Status`, `## Context`, `## Decision`, `## Consequences`) follows [Michael Nygard's template](https://github.com/joelparkerhenderson/architecture-decision-record/tree/main/locales/en/templates/decision-record-template-by-michael-nygard) — the de-facto standard for Architecture Decision Records. The frontmatter and bundle structure follow the [Open Knowledge Format][okf] v0.1, published by Google Cloud Platform under the Apache 2.0 licence. Arkouda layers ADR-specific validation on top of both.
+The ADR body schema (`## Status`, `## Context`, `## Decision`, `## Consequences`) follows [Michael Nygard's template](https://github.com/joelparkerhenderson/architecture-decision-record/tree/main/locales/en/templates/decision-record-template-by-michael-nygard) — the de-facto standard for Architecture Decision Records. The PRD section set is drawn from the templates surveyed in [`docs/adr/support-product-requirements-documents.md`](docs/adr/support-product-requirements-documents.md): [GitHub's spec-kit](https://github.com/github/spec-kit/blob/main/templates/spec-template.md), the [Atlassian Product Requirements blueprint](https://confluence.atlassian.com/doc/product-requirements-blueprint-329975392.html), [Figma's approach to PRDs](https://coda.io/@yuhki/figmas-approach-to-product-requirement-docs), [Shape Up](https://basecamp.com/shapeup/1.5-chapter-06), and [Lenny Rachitsky's template](https://www.atlassian.com/software/confluence/templates/lennys-product-requirements). The frontmatter and bundle structure follow the [Open Knowledge Format][okf] v0.1, published by Google Cloud Platform under the Apache 2.0 licence. Arkouda layers its own per-type validation on top of both.
 
 A verbatim copy of the OKF specification arkouda implements is vendored at [`docs/okf/SPEC.md`](docs/okf/SPEC.md), pinned to the upstream commit it was taken from — see [`docs/okf/README.md`](docs/okf/README.md) for provenance and checksums.
 

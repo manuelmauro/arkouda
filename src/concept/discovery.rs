@@ -1,6 +1,6 @@
 //! Concept discovery over an OKF bundle.
 
-use crate::adr::is_reserved;
+use crate::concept::is_reserved;
 use std::path::{Path, PathBuf};
 
 /// A reserved OKF file found in a bundle (OKF §3.1).

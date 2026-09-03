@@ -41,7 +41,7 @@ fn main() -> ExitCode {
 fn run(cli: &Cli) -> Result<i32> {
     match &cli.command {
         Command::List(args) => commands::list::run(args, cli),
-        Command::Decision(args) => commands::decision::run(args, cli),
+        Command::Section(args) => commands::section::run(args, cli),
         Command::Check => commands::check::run(cli),
         Command::New(args) => commands::new::run(args, cli),
         Command::Index => commands::index::run(cli),
