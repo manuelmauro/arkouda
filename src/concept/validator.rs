@@ -30,9 +30,10 @@
 //! unknown declared OKF version, a stale `index.md`, and a concept reference
 //! that does not resolve never fail a bundle.
 
+use crate::concept::frontmatter::UsageWindow;
 use crate::concept::manifest::{ManifestError, split_content};
 use crate::concept::types::{self, ConceptType};
-use crate::concept::{Manifest, OKF_VERSION, is_valid_id, markdown};
+use crate::concept::{Frontmatter, Manifest, OKF_VERSION, is_valid_id, markdown};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -285,22 +286,7 @@ fn check_timestamp(manifest: &Manifest, result: &mut ValidationResult) {
         );
     }
 
-    let mut instants: Vec<(&str, &str)> = Vec::new();
-    if let Some(generated) = frontmatter.generated.as_ref()
-        && let Some(at) = non_empty(generated.at.as_deref())
-    {
-        instants.push(("generated.at", at));
-    }
-    for verification in &frontmatter.verified {
-        if let Some(at) = non_empty(verification.at.as_deref()) {
-            instants.push(("verified.at", at));
-        }
-    }
-    if let Some(stale_after) = non_empty(frontmatter.stale_after.as_deref()) {
-        instants.push(("stale_after", stale_after));
-    }
-
-    for (field, value) in instants {
+    for (field, value) in v0_2_instants(frontmatter) {
         if !is_offset_datetime(value) {
             result.errors.push(
                 Diagnostic::new(
@@ -310,6 +296,81 @@ fn check_timestamp(manifest: &Manifest, result: &mut ValidationResult) {
                 .with_hint("Use `2026-05-06T14:30:00Z` or `2026-05-06T14:30:00+02:00`."),
             );
         }
+    }
+}
+
+/// Every instant OKF v0.2 defines on a concept, paired with the field path to
+/// report it under.
+///
+/// The list is exhaustive on purpose: upstream tightened *every* timestamp in
+/// the spec to carry an offset, so validating some of them and not others
+/// would let a date-only `last_modified` through while rejecting the same
+/// value in `generated.at`.
+fn v0_2_instants(frontmatter: &Frontmatter) -> Vec<(String, &str)> {
+    let mut instants: Vec<(String, &str)> = Vec::new();
+
+    if let Some(generated) = frontmatter.generated.as_ref()
+        && let Some(at) = non_empty(generated.at.as_deref())
+    {
+        instants.push(("generated.at".to_owned(), at));
+    }
+
+    for (index, verification) in frontmatter.verified.iter().enumerate() {
+        if let Some(at) = non_empty(verification.at.as_deref()) {
+            instants.push((format!("verified[{index}].at"), at));
+        }
+    }
+
+    if let Some(stale_after) = non_empty(frontmatter.stale_after.as_deref()) {
+        instants.push(("stale_after".to_owned(), stale_after));
+    }
+
+    push_window(
+        &mut instants,
+        "usage_window",
+        frontmatter.usage_window.as_ref(),
+    );
+
+    for (index, source) in frontmatter.sources.iter().enumerate() {
+        // A source's own `id` names it better than its position does, and the
+        // id is the key the body cites.
+        let label = source
+            .id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map_or_else(
+                || format!("sources[{index}]"),
+                |id| format!("sources[{id}]"),
+            );
+
+        if let Some(last_modified) = non_empty(source.last_modified.as_deref()) {
+            instants.push((format!("{label}.last_modified"), last_modified));
+        }
+        push_window(
+            &mut instants,
+            &format!("{label}.usage_window"),
+            source.usage_window.as_ref(),
+        );
+    }
+
+    instants
+}
+
+/// Add a `{ from, to }` range's endpoints under `prefix`.
+fn push_window<'a>(
+    instants: &mut Vec<(String, &'a str)>,
+    prefix: &str,
+    window: Option<&'a UsageWindow>,
+) {
+    let Some(window) = window else {
+        return;
+    };
+    if let Some(from) = non_empty(window.from.as_deref()) {
+        instants.push((format!("{prefix}.from"), from));
+    }
+    if let Some(to) = non_empty(window.to.as_deref()) {
+        instants.push((format!("{prefix}.to"), to));
     }
 }
 
@@ -1009,24 +1070,39 @@ An ADR template looks like this:
     fn v0_2_instants_must_carry_an_offset() {
         // Upstream tightened every v0.2 timestamp to an explicit offset. A
         // bare date is ambiguous by exactly the hours staleness turns on.
+        let dated = "generated: { by: human:test, at: 2026-05-06T00:00:00Z }";
+        // Every instant the spec defines, not just the headline three:
+        // upstream tightened all of them together, so validating some and not
+        // others would let a date-only `last_modified` through while
+        // rejecting the same value in `generated.at`.
         for (field, value) in [
             (
-                "generated: { by: human:test, at: 2026-05-06 }",
+                "generated: { by: human:test, at: 2026-05-06 }".to_owned(),
                 "generated.at",
             ),
+            (format!("{dated}\nstale_after: 2026-05-06"), "stale_after"),
             (
-                "generated: { by: human:test, at: 2026-05-06T00:00:00Z }\nstale_after: 2026-05-06",
-                "stale_after",
+                format!("{dated}\nverified: {{ by: human:a, at: 2026-05-06 }}"),
+                "verified[0].at",
             ),
             (
-                "generated: { by: human:test, at: 2026-05-06T00:00:00Z }\nverified: { by: human:a, at: 2026-05-06 }",
-                "verified.at",
+                format!("{dated}\nusage_window: {{ from: 2026-06-01, to: 2026-06-30T00:00:00Z }}"),
+                "usage_window.from",
+            ),
+            (
+                format!(
+                    "{dated}\nsources:\n  - id: s1\n    resource: https://x.test\n    last_modified: 2026-05-30"
+                ),
+                "sources[s1].last_modified",
+            ),
+            (
+                format!(
+                    "{dated}\nsources:\n  - resource: https://x.test\n    usage_window: {{ from: 2026-06-01T00:00:00Z, to: 2026-06-30 }}"
+                ),
+                "sources[0].usage_window.to",
             ),
         ] {
-            let content = good_adr().replace(
-                "generated: { by: human:test, at: 2026-05-06T00:00:00Z }",
-                field,
-            );
+            let content = good_adr().replace(dated, &field);
             let result = validate(&parse("docs/adr/x.md", &content));
             assert!(
                 result

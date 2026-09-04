@@ -308,7 +308,7 @@ Each diagnostic has a code; the hint usually tells you the exact fix.
 - **E004** concept id is not a lowercase slug → rename the file (and any parent dirs) to letters, digits, single hyphens.
 - **E005** *(warning)* no configured type declares this `type` → either the value is a typo (fix it to a configured `okf_type`; the hint lists them), or the project has not declared this type yet. Until it does, the concept is checked for OKF conformance only — its status and sections are not validated. A warning rather than an error because a conformant OKF bundle may legitimately hold types this project has not described.
 - **E006** invalid instant → ISO 8601. `generated.at`, `verified[].at`, and `stale_after` need an explicit offset (`2026-05-06T14:30:00Z`); a legacy `timestamp` may be a plain date.
-- **E007/E008** missing or wrong H1 → first heading must be `# <title>`.
+- **E007/E008** missing or wrong H1 → first heading must be `# <title>`. These are *arkouda's* contract, not OKF's — OKF §4.2 requires no body sections at all — so they fire only for a concept whose `type` the project configures. Don't add an H1 to an unconfigured concept to silence a diagnostic `arkouda check` never emitted for it.
 - **E009** missing required section → add the named `## Section`. Which ones are required depends on `type`, and a project's own type may require none at all.
 - **E010** duplicate concept id across files → make ids unique.
 - **E011** `index.md` frontmatter → only a bundle-root index may have it, and only `okf_version`.

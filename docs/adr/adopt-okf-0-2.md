@@ -53,7 +53,9 @@ A document dated only the v0.1 way gets **`E017`**, a new warning. It never fail
 
 ### v0.2 instants carry an explicit offset; the retired key stays lenient
 
-`generated.at`, `verified[].at`, and `stale_after` must be ISO 8601 datetimes with an offset (`E006`). A legacy `timestamp` continues to accept a plain date, a local datetime, or an offset datetime. Tightening a key the spec has already retired would break documents that are still perfectly readable, and would punish exactly the users who have not migrated yet.
+Every instant v0.2 defines on a concept must be an ISO 8601 datetime with an offset (`E006`): `generated.at`, each `verified[].at`, `stale_after`, each `sources[].last_modified`, and both endpoints of a `usage_window`, shared or per-source. The list is exhaustive on purpose — upstream tightened all of them in one commit, and validating some but not others would let a date-only `last_modified` through while rejecting the same value in `generated.at`.
+
+A legacy `timestamp` continues to accept a plain date, a local datetime, or an offset datetime. Tightening a key the spec has already retired would break documents that are still perfectly readable, and would punish exactly the users who have not migrated yet.
 
 ### The provenance, trust, and lifecycle families are parsed, not merely tolerated
 
@@ -104,7 +106,7 @@ Requiring a `#` heading, and requiring it to match `title`, is arkouda's contrac
 - **Every existing bundle warns until it is migrated.** `E017` fires once per document dated with `timestamp`, and `E013` fires once per bundle whose `index.md` still declares `okf_version: "0.1"`. Both are warnings and neither fails a build, but a large bundle will light up on first run after upgrading. `arkouda index` clears the second; the first is a hand edit per file, or the `arkouda migrate` this ADR declines to design.
 - **Arkouda's `status` is deliberately not OKF's.** A generic v0.2 consumer reads every arkouda concept as `stable`. That is a real, if small, loss of fidelity to a spec arkouda claims to implement, and it is the price of not breaking every bundle in the wild.
 - `arkouda new` writes a longer frontmatter block, and its `generated.by` is `arkouda/<version>` rather than a person. Left as-is, a bundle's provenance says a tool wrote everything.
-- The instant format tightened: a `generated.at` of `2026-05-06` is now an `E006` error where a `timestamp` of `2026-05-06` was fine. Only documents that migrate wrongly hit this.
+- The instant format tightened: a `generated.at` of `2026-05-06` is now an `E006` error where a `timestamp` of `2026-05-06` was fine, and the same applies to every other v0.2 instant. Only documents that migrate wrongly hit this.
 
 ### Neutral
 

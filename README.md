@@ -68,7 +68,7 @@ Every document is an OKF *concept*. Its **concept id is its path within the bund
 
 `type` decides which contract a concept is checked against. The required frontmatter keys are the same for both built-in types — `type`, `title`, `description`, `status`, and a content timestamp — and that set is *arkouda's* profile, not OKF's: OKF requires only `type`, and everything else arkouda insists on is layered on top.
 
-A concept's last meaningful change is `generated: { by, at }` (OKF §5.2). OKF v0.2 supersedes v0.1's `timestamp` with it, and arkouda reads `generated.at` first, falling back to a legacy `timestamp` — so **v0.1 documents keep working**, with an `E017` warning as the only prompt to migrate. Instants in the v0.2 keys (`generated.at`, `verified[].at`, `stale_after`) must carry an explicit offset, e.g. `2026-05-06T14:30:00Z`; the retired `timestamp` still accepts a plain date.
+A concept's last meaningful change is `generated: { by, at }` (OKF §5.2). OKF v0.2 supersedes v0.1's `timestamp` with it, and arkouda reads `generated.at` first, falling back to a legacy `timestamp` — so **v0.1 documents keep working**, with an `E017` warning as the only prompt to migrate. Every instant v0.2 defines must carry an explicit offset, e.g. `2026-05-06T14:30:00Z` — `generated.at`, each `verified[].at`, `stale_after`, each `sources[].last_modified`, and both ends of a `usage_window`. The retired `timestamp` still accepts a plain date.
 
 The v0.2 provenance, trust, and lifecycle families — `sources` with its credibility signals, `usage_window`, `generated`, `verified`, `stale_after` — are all parsed. None is required, and §11 forbids rejecting a concept for missing any of them.
 
