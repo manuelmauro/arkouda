@@ -200,11 +200,3 @@ Rejected as half a feature, though it is the natural fallback if the config pars
 [4] [Telemetry for agent command invocations](telemetry-for-agent-command-invocations.md) — the event schema this ADR extends with `codes` and `type_kind`, and its additive-schema and no-free-text commitments.
 [5] [Defer to Unix tools](defer-to-unix-tools.md) — the standing constraint that arkouda adds surface only where a shell pipeline cannot do the job; a per-project schema is not something `rg` can enforce.
 [6] Local telemetry log, `~/Library/Application Support/arkouda/telemetry.jsonl` — 59 events, 2026-05-21 to 2026-08-31, all from ADR-only builds 0.3.0–0.5.0. The evidence base for the usage figures in Context, and the reason those figures cannot settle the question.
-
-## Comments
-
-### @manuelmauro — 2026-09-04T10:00:58Z § Decision
-
-> Telemetry records which diagnostics fired
-
-Test
