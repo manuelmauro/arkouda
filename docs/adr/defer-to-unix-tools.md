@@ -5,8 +5,9 @@ description: Arkouda exposes structured access to the ADR collection but defers 
 tags:
   - philosophy
   - cli
-timestamp: 2026-05-06
-status: accepted
+generated: { by: human:manuelmauro, at: 2026-05-06T00:00:00Z }
+status: stable
+lifecycle: accepted
 deciders: []
 ---
 

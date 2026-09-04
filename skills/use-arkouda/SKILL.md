@@ -1,6 +1,6 @@
 ---
 name: use-arkouda
-version: 0.6.0
+version: 0.7.0
 description: Find prior decisions and product requirements, and record new ones, in a repo's arkouda collection of ADRs (Architecture Decision Records) and PRDs (Product Requirements Documents). Invoke any time you're about to make a non-trivial design, architecture, library, schema, or convention decision, or about to build a feature — check what was already decided and what is already required before deciding, and capture the outcome afterwards.
 license: MIT
 ---
@@ -9,7 +9,7 @@ license: MIT
 
 In repositories that record decisions and requirements as Markdown files with YAML frontmatter (conventionally under `docs/adr/` and `docs/prd/`), `arkouda` is the CLI for finding, reading, validating, and scaffolding them. **Before you decide, check what's already been decided. Before you build, check what's already required. After you decide, capture it.**
 
-An arkouda directory is an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) (OKF) v0.1 *knowledge bundle*: each document is a *concept* whose id is its path within the bundle without the `.md` suffix (`security/mtls.md` → `security/mtls`). `index.md` and `log.md` are reserved by OKF and are never concepts.
+An arkouda directory is an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) (OKF) v0.2 *knowledge bundle*: each document is a *concept* whose id is its path within the bundle without the `.md` suffix (`security/mtls.md` → `security/mtls`). `index.md` and `log.md` are reserved by OKF and are never concepts.
 
 If a repo has no such directory yet but the `arkouda` binary is installed, this skill is also the right one to reach for: `arkouda new` enforces the schema from the first file.
 
@@ -21,7 +21,7 @@ Arkouda has two built-in types, and picking the wrong one produces a document th
 |-------------------|---------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------|
 | Answers           | Why is the software built this way?                                             | What is the software supposed to do?                                                    |
 | Write one when    | you commit to a library, datastore, transport, layout, convention, or trade-off | you start on a feature whose scope, boundaries, or success criteria aren't written down |
-| Statuses          | `proposed`, `accepted`, `superseded`, `deprecated`, `rejected`                  | `draft`, `in-review`, `approved`, `shipped`, `abandoned`, `superseded`                  |
+| `lifecycle`       | `proposed`, `accepted`, `superseded`, `deprecated`, `rejected`                  | `draft`, `in-review`, `approved`, `shipped`, `abandoned`, `superseded`                  |
 | Required sections | `Status`, `Context`, `Decision`, `Consequences`                                 | `Status`, `Problem`, `Requirements`, `Non-Goals`, `Success Metrics`                     |
 | Primary section   | `Decision`                                                                      | `Requirements`                                                                          |
 | Default directory | `docs/adr`                                                                      | `docs/prd`                                                                              |
@@ -103,7 +103,7 @@ Five subcommands, each doing something the shell can't:
 - **`arkouda list [--sort id|timestamp|status] [--type <slug>] [-l]`** — one path per line. Pipe straight into `xargs`/`rg`/`cat`/`wc`. With `-l`, a headerless `ID TYPE STATUS TIMESTAMP PATH TITLE — DESCRIPTION` table for human skimming and for `awk`. `--type` filters by frontmatter type; valid slugs are this project's, not a fixed `adr|prd`.
 - **`arkouda section <id> [<name>]`** — body of that concept's primary section (`Decision` for an ADR, `Requirements` for a PRD). Give a `<name>` for any other heading (`context`, `consequences`, `problem`, `non-goals`, `success metrics`, `status`, or custom). Errors if the section is missing. For the full file, resolve the path through `arkouda list` and `cat` it.
 - **`arkouda check`** — validates in three tiers: OKF conformance for every concept, arkouda's frontmatter profile for concepts whose `type` the project configures, and that type's status vocabulary and required sections. Exit 0 clean, 1 on any error. Each diagnostic carries a code (E000–E015) and a fix hint. Warnings never fail the run. A concept whose `type` no `[[types]]` table configures is checked for OKF conformance only and warned about (`E005`) — it is neither skipped nor a failure.
-- **`arkouda new "<title>" [--type <slug>] [--id <slug>] [--status <value>] [--description "<one-line summary>"]`** — scaffold a new concept with today's date, from that type's template. Defaults to `--type adr`. That default keeps working when a project redefines the `adr` slug — you get its contract instead of the built-in one — and fails only when the project has no `adr` slug at all, in which case the error names the slugs it does have. `--status` must come from the chosen type's vocabulary and defaults to the first of its lifecycle (`proposed` for an ADR, `draft` for a PRD). Default id is a slug from the title. The description should summarize *what was decided* or *what is being built*, not just the topic. Refreshes `index.md` if the bundle has one.
+- **`arkouda new "<title>" [--type <slug>] [--id <slug>] [--status <value>] [--description "<one-line summary>"]`** — scaffold a new concept with today's date, from that type's template. Defaults to `--type adr`. That default keeps working when a project redefines the `adr` slug — you get its contract instead of the built-in one — and fails only when the project has no `adr` slug at all, in which case the error names the slugs it does have. `--status` must come from the chosen type's own vocabulary and defaults to the first of its lifecycle (`proposed` for an ADR, `draft` for a PRD); it is written to `lifecycle`, and the OKF `status` it projects onto is written alongside it. Default id is a slug from the title. The description should summarize *what was decided* or *what is being built*, not just the topic. Refreshes `index.md` if the bundle has one.
 - **`arkouda index`** — regenerate each bundle's `index.md`, an OKF §6 listing of every concept under `# <Type>` then `## <Status>`. Read it to see the whole collection at a glance without opening any file.
 
 Global flags: `--dir <path>` (also `ADR_DIR`), `-q/--quiet`. Run `arkouda --help` or `arkouda <subcommand> --help` for the authoritative surface.
@@ -303,12 +303,15 @@ Arkouda validates document *structure*, not requirement *content*. It does not e
 Each diagnostic has a code; the hint usually tells you the exact fix.
 
 - **E000** unparseable file → the file must start with YAML frontmatter delimited by `---`.
-- **E001/E002** missing or empty required field → add the field with a real value.
-- **E003** invalid status → use a value from *this type's* vocabulary; the hint lists them.
+- **E001/E002** missing or empty required field → add the field with a real value. For a timestamp, that means `generated.at` (or a legacy `timestamp`).
+- **E003** invalid `lifecycle` → use a value from *this type's* vocabulary; the hint lists them.
+- **E018** `status` is not an OKF status → `status` holds OKF's `draft | stable | deprecated`. A per-type value like `accepted` belongs in `lifecycle`.
+- **E019** `status` contradicts `lifecycle` → `status` is the *projection* of `lifecycle`, not a second opinion. The hint names the value to write. Absent `status` counts as `stable`, so it disagrees too when the lifecycle projects elsewhere.
+- **E020** *(warning)* the per-type value is in `status` → arkouda's pre-0.7 spelling. Write `lifecycle: <value>` and `status: <projection>`. Reading the old spelling still works.
 - **E004** concept id is not a lowercase slug → rename the file (and any parent dirs) to letters, digits, single hyphens.
 - **E005** *(warning)* no configured type declares this `type` → either the value is a typo (fix it to a configured `okf_type`; the hint lists them), or the project has not declared this type yet. Until it does, the concept is checked for OKF conformance only — its status and sections are not validated. A warning rather than an error because a conformant OKF bundle may legitimately hold types this project has not described.
-- **E006** invalid timestamp → ISO 8601, e.g. `2026-05-06` or `2026-05-06T14:30:00Z`.
-- **E007/E008** missing or wrong H1 → first heading must be `# <title>`.
+- **E006** invalid instant → ISO 8601. `generated.at`, `verified[].at`, and `stale_after` need an explicit offset (`2026-05-06T14:30:00Z`); a legacy `timestamp` may be a plain date.
+- **E007/E008** missing or wrong H1 → first heading must be `# <title>`. These are *arkouda's* contract, not OKF's — OKF §4.2 requires no body sections at all — so they fire only for a concept whose `type` the project configures. Don't add an H1 to an unconfigured concept to silence a diagnostic `arkouda check` never emitted for it.
 - **E009** missing required section → add the named `## Section`. Which ones are required depends on `type`, and a project's own type may require none at all.
 - **E010** duplicate concept id across files → make ids unique.
 - **E011** `index.md` frontmatter → only a bundle-root index may have it, and only `okf_version`.
@@ -316,6 +319,8 @@ Each diagnostic has a code; the hint usually tells you the exact fix.
 - **E013** *(warning)* bundle declares an OKF version arkouda doesn't implement.
 - **E014** *(warning)* `index.md` is stale → run `arkouda index`.
 - **E015** *(warning)* a `decisions` or `superseded_by` entry doesn't resolve to a loaded concept → fix the id, or widen `--dir`/`dirs` if it lives in a bundle this run didn't load. It's a warning precisely because arkouda can't tell a broken reference from an out-of-scope one.
+- **E016** *(warning)* the concept is past its `stale_after` instant → re-check the content and move `stale_after` forward, or drop the key. Worth heeding before you rely on the concept: it says the author expected it to need review by now.
+- **E017** *(warning)* the concept uses v0.1's `timestamp` → replace it with `generated: { by: human:<id>, at: <date>T00:00:00Z }`. Reading the old key still works, so this never fails anything.
 
 ## What not to do
 

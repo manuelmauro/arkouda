@@ -18,26 +18,84 @@
 
 use std::sync::OnceLock;
 
+/// OKF v0.2 §5.4's lifecycle vocabulary, the value that goes in `status`.
+///
+/// Three coarse values every OKF consumer understands. Arkouda's own
+/// vocabularies are finer than this and live in `lifecycle`; each of their
+/// values projects onto one of these so a generic consumer reads something
+/// true without knowing arkouda's types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OkfStatus {
+    /// Not yet reviewed; possibly incomplete.
+    Draft,
+    /// Ready for consumption. OKF's default when `status` is absent.
+    #[default]
+    Stable,
+    /// Kept for links and history; no longer current.
+    Deprecated,
+}
+
+impl OkfStatus {
+    /// The frontmatter value.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Stable => "stable",
+            Self::Deprecated => "deprecated",
+        }
+    }
+
+    /// Parse a `status` value, or `None` when it is outside OKF's vocabulary.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim() {
+            "draft" => Some(Self::Draft),
+            "stable" => Some(Self::Stable),
+            "deprecated" => Some(Self::Deprecated),
+            _ => None,
+        }
+    }
+
+    /// OKF's three values, for diagnostics.
+    pub fn vocabulary() -> &'static str {
+        "draft, stable, deprecated"
+    }
+}
+
 /// One status in a concept type's lifecycle vocabulary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Status {
-    /// Frontmatter value, lowercase and kebab-case (`in-review`).
+    /// Frontmatter `lifecycle` value, lowercase and kebab-case (`in-review`).
     pub name: String,
     /// Title-case rendering used in `index.md` headings and in the body's
     /// `## Status` section (`In Review`).
     pub label: String,
+    /// The OKF §5.4 status this projects onto, written into `status`.
+    pub okf: OkfStatus,
 }
 
 impl Status {
-    /// A status whose label is derived from its kebab-case name.
+    /// A status whose label is derived from its kebab-case name, projecting
+    /// onto `okf`.
     ///
-    /// Deriving rather than declaring reproduces every built-in label and
-    /// keeps a declared vocabulary a plain list of strings.
-    pub fn new(name: &str) -> Self {
+    /// Deriving the label rather than declaring it reproduces every built-in
+    /// and keeps a declared vocabulary a plain list of strings.
+    pub fn new(name: &str, okf: OkfStatus) -> Self {
         Self {
             name: name.to_owned(),
             label: title_case(name),
+            okf,
         }
+    }
+
+    /// The projection arkouda assumes for a declared status that names none.
+    ///
+    /// A value spelled exactly like one of OKF's own means that one. Anything
+    /// else is `stable`, OKF's own default, because guessing that an unknown
+    /// status means `deprecated` would tell every consumer a concept is
+    /// retired when it is not. A type with terminal states should say so with
+    /// `okf_status`.
+    pub fn default_projection(name: &str) -> OkfStatus {
+        OkfStatus::parse(name).unwrap_or_default()
     }
 }
 
@@ -171,15 +229,16 @@ pub fn adr() -> ConceptType {
     ConceptType {
         slug: "adr".to_owned(),
         okf_type: "Architecture Decision Record".to_owned(),
-        statuses: [
-            "proposed",
-            "accepted",
-            "superseded",
-            "deprecated",
-            "rejected",
-        ]
-        .map(Status::new)
-        .to_vec(),
+        // A proposal is not yet reviewed; an accepted decision is the live
+        // one; superseded, deprecated, and rejected are all "kept for links
+        // and history", which is exactly OKF's `deprecated`.
+        statuses: vec![
+            Status::new("proposed", OkfStatus::Draft),
+            Status::new("accepted", OkfStatus::Stable),
+            Status::new("superseded", OkfStatus::Deprecated),
+            Status::new("deprecated", OkfStatus::Deprecated),
+            Status::new("rejected", OkfStatus::Deprecated),
+        ],
         required_sections: ["Status", "Context", "Decision", "Consequences"]
             .map(str::to_owned)
             .to_vec(),
@@ -207,16 +266,17 @@ pub fn prd() -> ConceptType {
     ConceptType {
         slug: "prd".to_owned(),
         okf_type: "Product Requirements Document".to_owned(),
-        statuses: [
-            "draft",
-            "in-review",
-            "approved",
-            "shipped",
-            "abandoned",
-            "superseded",
-        ]
-        .map(Status::new)
-        .to_vec(),
+        // Drafting and review are both pre-approval. Approved and shipped are
+        // the live states — a PRD is worth reading between sign-off and
+        // release. Abandoned and superseded are history.
+        statuses: vec![
+            Status::new("draft", OkfStatus::Draft),
+            Status::new("in-review", OkfStatus::Draft),
+            Status::new("approved", OkfStatus::Stable),
+            Status::new("shipped", OkfStatus::Stable),
+            Status::new("abandoned", OkfStatus::Deprecated),
+            Status::new("superseded", OkfStatus::Deprecated),
+        ],
         required_sections: [
             "Status",
             "Problem",
@@ -389,12 +449,10 @@ mod tests {
 
     #[test]
     fn labels_are_derived_from_kebab_case_names() {
-        assert_eq!(Status::new("draft").label, "Draft");
-        assert_eq!(Status::new("in-review").label, "In Review");
-        assert_eq!(
-            Status::new("needs-more-thought").label,
-            "Needs More Thought"
-        );
+        let label = |name| Status::new(name, OkfStatus::Stable).label;
+        assert_eq!(label("draft"), "Draft");
+        assert_eq!(label("in-review"), "In Review");
+        assert_eq!(label("needs-more-thought"), "Needs More Thought");
     }
 
     #[test]

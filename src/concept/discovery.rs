@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 /// A reserved OKF file found in a bundle (OKF §3.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReservedKind {
-    /// `index.md` — directory listing (OKF §6).
+    /// `index.md` — directory listing (OKF §8).
     Index,
-    /// `log.md` — update history (OKF §7).
+    /// `log.md` — update history (OKF §9).
     Log,
 }
 

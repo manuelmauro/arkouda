@@ -44,7 +44,7 @@
 
 use crate::concept::manifest::{ManifestError, split_content};
 use crate::concept::markdown;
-use crate::concept::types::{self, ConceptType, Origin, Status, TemplateSection};
+use crate::concept::types::{self, ConceptType, OkfStatus, Origin, Status, TemplateSection};
 use crate::concept::{is_valid_id, markdown::SECTION_LEVEL};
 use crate::error::{ArkoudaError, Result};
 use serde::Deserialize;
@@ -81,9 +81,14 @@ struct TypeDef {
     slug: String,
     /// The OKF `type` string documents of this kind declare.
     okf_type: String,
-    /// Status vocabulary in lifecycle order. The first entry is what
-    /// `arkouda new` starts a document in.
+    /// Status vocabulary in lifecycle order, written into `lifecycle`. The
+    /// first entry is what `arkouda new` starts a document in.
     statuses: Vec<String>,
+    /// Which OKF §5.4 `status` each entry of `statuses` projects onto:
+    /// `{ withdrawn = "deprecated" }`. Optional; see
+    /// [`Status::default_projection`] for what an unmapped status gets.
+    #[serde(default)]
+    okf_status: BTreeMap<String, String>,
     /// Sections `arkouda check` requires. Optional: a type with none gets a
     /// status vocabulary and a template but no body contract.
     #[serde(default)]
@@ -331,7 +336,27 @@ impl TypeDef {
             {
                 return Err(context(format!("status `{status}` is declared twice")));
             }
-            statuses.push(Status::new(status));
+            let okf = match self.okf_status.get(status) {
+                Some(declared) => OkfStatus::parse(declared).ok_or_else(|| {
+                    context(format!(
+                        "`okf_status.{status} = \"{declared}\"` is not an OKF status; use one \
+                         of: {}",
+                        OkfStatus::vocabulary()
+                    ))
+                })?,
+                None => Status::default_projection(status),
+            };
+            statuses.push(Status::new(status, okf));
+        }
+
+        // A projection for a status the type does not have is a typo that
+        // would otherwise sit in the config doing nothing.
+        for mapped in self.okf_status.keys() {
+            if !statuses.iter().any(|status| status.name == *mapped) {
+                return Err(context(format!(
+                    "`okf_status` maps `{mapped}`, which is not one of this type's `statuses`"
+                )));
+            }
         }
         if statuses.is_empty() {
             return Err(context(

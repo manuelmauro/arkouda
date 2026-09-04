@@ -30,7 +30,7 @@ pub use types::{ConceptType, Status};
 pub use validator::{Diagnostic, DiagnosticCode, ValidationResult};
 
 /// The OKF version this crate targets.
-pub const OKF_VERSION: &str = "0.1";
+pub const OKF_VERSION: &str = "0.2";
 
 /// Filenames OKF §3.1 reserves at every level of a bundle. They are never
 /// concept documents.

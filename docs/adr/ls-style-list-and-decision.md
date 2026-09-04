@@ -3,8 +3,9 @@ type: Architecture Decision Record
 title: ls-style list and a decision subcommand
 description: Make arkouda list headerless and ls-style (paths by default, -l for the table) and replace show with arkouda decision <id>, defaulting to the decision section.
 tags: []
-timestamp: 2026-05-07
-status: accepted
+generated: { by: human:manuelmauro, at: 2026-05-07T00:00:00Z }
+status: stable
+lifecycle: accepted
 deciders: []
 ---
 

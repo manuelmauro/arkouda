@@ -5,7 +5,7 @@ use crate::commands::Outcome;
 use crate::concept::types::{ConceptType, Status};
 use crate::concept::{index, is_valid_id, slugify};
 use crate::error::{ArkoudaError, Result};
-use chrono::Local;
+use chrono::{SecondsFormat, Utc};
 use colored::Colorize;
 use serde_yaml::{Mapping, Value};
 use std::path::{Path, PathBuf};
@@ -34,7 +34,7 @@ pub fn run(args: &NewArgs, cli: &Cli) -> Result<Outcome> {
         });
     }
 
-    let timestamp = Local::now().date_naive().format("%Y-%m-%d").to_string();
+    let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true);
     let description = args
         .description
         .as_deref()
@@ -98,7 +98,7 @@ fn resolve_status(
 }
 
 /// Keep a bundle's `index.md` in step with the concept just added. A bundle
-/// without an index stays without one — OKF §9 makes the index optional, so
+/// without an index stays without one — OKF §11 makes the index optional, so
 /// creating one unasked would be a surprise.
 fn refresh_index(target_dir: &Path, cli: &Cli) -> Result<()> {
     let root = super::bundle_root(target_dir);
@@ -116,6 +116,10 @@ fn refresh_index(target_dir: &Path, cli: &Cli) -> Result<()> {
 
     Ok(())
 }
+
+/// The actor `arkouda new` records as having generated a scaffold, in the OKF
+/// §7 `<producer>/<version>` form.
+const GENERATOR: &str = concat!("arkouda/", env!("CARGO_PKG_VERSION"));
 
 /// OKF frontmatter: the spec's required `type` and recommended fields first,
 /// then the producer extensions this type scaffolds.
@@ -135,8 +139,22 @@ fn render_frontmatter(
     set("title", Value::from(title));
     set("description", Value::from(description));
     set("tags", Value::Sequence(Vec::new()));
-    set("timestamp", Value::from(timestamp));
-    set("status", Value::from(status.name.as_str()));
+
+    // OKF v0.2 §5.2 records a concept's last meaningful change as
+    // `generated: { by, at }`; §13.1 retires the v0.1 `timestamp` it replaces.
+    // The actor is arkouda itself, in the §7 `<producer>/<version>` form,
+    // because arkouda is what wrote these bytes — whoever fills the template
+    // in should put themselves here as `human:<id>`.
+    let mut generated = Mapping::new();
+    generated.insert(Value::from("by"), Value::from(GENERATOR));
+    generated.insert(Value::from("at"), Value::from(timestamp));
+    set("generated", Value::Mapping(generated));
+
+    // Both lifecycle keys: OKF's coarse `status` for any consumer, and the
+    // type's own value for arkouda. The first is the projection of the second,
+    // never an independent choice.
+    set("status", Value::from(status.okf.name()));
+    set("lifecycle", Value::from(status.name.as_str()));
     for extension in &concept_type.template_extensions {
         set(extension.as_str(), Value::Sequence(Vec::new()));
     }
@@ -204,7 +222,7 @@ mod tests {
         // An unrelated malformed concept makes `refresh_index` fail, because
         // refreshing re-parses every concept in the bundle.
         std::fs::write(root.join("broken.md"), "no frontmatter here\n").expect("write");
-        std::fs::write(root.join("index.md"), "---\nokf_version: \"0.1\"\n---\n").expect("write");
+        std::fs::write(root.join("index.md"), "---\nokf_version: \"0.2\"\n---\n").expect("write");
 
         let exit = run_new(&root, &["Use Postgres"]).expect("creation must not error");
 
@@ -220,7 +238,7 @@ mod tests {
     #[test]
     fn creation_refreshes_an_existing_index() {
         let root = temp_dir("refresh");
-        std::fs::write(root.join("index.md"), "---\nokf_version: \"0.1\"\n---\n").expect("write");
+        std::fs::write(root.join("index.md"), "---\nokf_version: \"0.2\"\n---\n").expect("write");
 
         assert_eq!(run_new(&root, &["Use Postgres"]).expect("create"), 0);
 
@@ -281,7 +299,7 @@ mod tests {
                 "Use Postgres",
                 "Store relational data in Postgres.",
                 concept_type.default_status(),
-                "2026-05-06",
+                "2026-05-06T00:00:00Z",
             );
 
             let manifest = Manifest::parse_content(
@@ -315,11 +333,12 @@ mod tests {
             "Bulk ADR Import",
             "Import a directory of loose Markdown files.",
             prd.default_status(),
-            "2026-08-07",
+            "2026-08-07T00:00:00Z",
         );
 
         assert!(rendered.contains("type: Product Requirements Document"));
         assert!(rendered.contains("status: draft"));
+        assert!(rendered.contains("lifecycle: draft"));
         assert!(rendered.contains("owner: []"));
         assert!(rendered.contains("decisions: []"));
         assert!(rendered.contains("## Status\n\nDraft\n"));

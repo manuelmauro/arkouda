@@ -5,9 +5,15 @@
 //!
 //! | Tier | Codes | Applies to |
 //! | --- | --- | --- |
-//! | OKF conformance | `E000`, `E004`, `E007`, `E010`, `E011`, `E012` | every concept, always |
-//! | arkouda profile | `E001`, `E002`, `E006`, `E008` | concepts whose `type` resolves |
+//! | OKF conformance | `E000`, `E004`, `E010`, `E011`, `E012` | every concept, always |
+//! | arkouda profile | `E001`, `E002`, `E006`, `E007`, `E008` | concepts whose `type` resolves |
 //! | template contract | `E003`, `E009` | that type's vocabulary and sections |
+//!
+//! `E007` sits in the profile rather than the OKF tier because OKF §4.2 says
+//! plainly that there are no required body sections — a concept with no `#`
+//! heading is conformant, and failing one would be arkouda rejecting a bundle
+//! the spec accepts. Requiring the heading to exist, and to match `title`, is
+//! arkouda's own contract.
 //!
 //! The tiers are what let arkouda be strict about the format it implements and
 //! permissive about the contracts a project has chosen not to write down. A
@@ -20,14 +26,15 @@
 //!
 //! `E013`, `E014`, and `E015` sit outside the tiers: they are bundle- and
 //! reference-level warnings that apply whatever a concept's type. OKF's
-//! permissive-consumption rule (§9) is why they warn rather than fail — an
+//! permissive-consumption rule (§11) is why they warn rather than fail — an
 //! unknown declared OKF version, a stale `index.md`, and a concept reference
 //! that does not resolve never fail a bundle.
 
+use crate::concept::frontmatter::UsageWindow;
 use crate::concept::manifest::{ManifestError, split_content};
-use crate::concept::types::{self, ConceptType};
-use crate::concept::{Manifest, OKF_VERSION, is_valid_id, markdown};
-use chrono::{DateTime, NaiveDate, NaiveDateTime};
+use crate::concept::types::{self, ConceptType, OkfStatus};
+use crate::concept::{Frontmatter, Manifest, OKF_VERSION, is_valid_id, markdown};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
@@ -124,6 +131,18 @@ pub enum DiagnosticCode {
     /// A frontmatter concept reference does not resolve to a loaded concept.
     /// Warning.
     E015,
+    /// The concept is past its `stale_after` instant. Warning.
+    E016,
+    /// The concept dates itself with v0.1's `timestamp` rather than
+    /// `generated.at`. Warning.
+    E017,
+    /// `status` is not one of OKF §5.4's `draft | stable | deprecated`.
+    E018,
+    /// `status` contradicts the OKF projection of `lifecycle`.
+    E019,
+    /// The per-type lifecycle is in `status`, arkouda's pre-0.7 spelling,
+    /// rather than in `lifecycle`. Warning.
+    E020,
 }
 
 impl fmt::Display for DiagnosticCode {
@@ -147,9 +166,9 @@ pub fn validate(manifest: &Manifest) -> ValidationResult {
     let mut result = ValidationResult::default();
 
     // Tier 1 — OKF conformance. True of every concept in a bundle, whatever
-    // it declares itself to be.
+    // it declares itself to be. A `#` heading is deliberately not here: OKF
+    // §4.2 requires no body sections at all.
     check_concept_id(manifest, &mut result);
-    check_title_heading_present(manifest, &mut result);
 
     let declared = non_empty(manifest.frontmatter.concept_type.as_deref());
     let Some(declared) = declared else {
@@ -188,7 +207,9 @@ pub fn validate(manifest: &Manifest) -> ValidationResult {
     // of these, and applied only where a contract says what they mean.
     check_profile_fields(manifest, concept_type, &mut result);
     check_timestamp(manifest, &mut result);
+    check_title_heading_present(manifest, &mut result);
     check_title_heading_matches(manifest, &mut result);
+    check_lifecycle(manifest, &mut result);
 
     // Tier 3 — the type's own contract.
     check_status_vocabulary(manifest, concept_type, &mut result);
@@ -216,26 +237,60 @@ fn check_profile_fields(
         "Add a `description` summarizing the concept itself (what was decided, or \
          what is being built — not just the topic) in one sentence.",
     );
-    check_required_field(
-        result,
-        "status",
-        manifest.frontmatter.status.as_deref(),
-        &format!(
-            "Add `status: {}` or another value from: {}.",
-            concept_type.default_status().name,
-            concept_type.status_list()
-        ),
-    );
-    check_required_field(
-        result,
-        "timestamp",
-        manifest.frontmatter.timestamp.as_deref(),
-        "Add `timestamp: YYYY-MM-DD` to the YAML frontmatter.",
-    );
+    if manifest
+        .frontmatter
+        .resolved_lifecycle(Some(concept_type))
+        .is_none()
+    {
+        result.errors.push(
+            Diagnostic::new(
+                DiagnosticCode::E001,
+                "missing required frontmatter field `lifecycle`",
+            )
+            .with_hint(format!(
+                "Add `lifecycle: {}` or another value from: {}. `status` carries OKF's coarse \
+                 `{}` instead.",
+                concept_type.default_status().name,
+                concept_type.status_list(),
+                OkfStatus::vocabulary()
+            )),
+        );
+    }
+    // OKF v0.2 §13.1 supersedes `timestamp` with `generated.at`, and permits
+    // reading the legacy key. Either satisfies the profile; neither does not.
+    if manifest.frontmatter.content_timestamp().is_none() {
+        let code = if manifest.frontmatter.generated.is_some() {
+            // `generated` is there but carries no `at`.
+            DiagnosticCode::E002
+        } else {
+            DiagnosticCode::E001
+        };
+        result.errors.push(
+            Diagnostic::new(
+                code,
+                "no content timestamp: neither `generated.at` nor `timestamp`",
+            )
+            .with_hint(
+                "Add `generated: { by: human:<id>, at: 2026-05-06T14:30:00Z }`. OKF v0.2 \
+                     records a concept's last change there; a bare `timestamp` is the v0.1 \
+                     spelling and is still read.",
+            ),
+        );
+    }
 }
 
+/// Check every instant this concept carries.
+///
+/// `generated.at`, `verified[].at`, and `stale_after` are v0.2 datetimes and
+/// must carry an explicit offset — the spec's own examples all do, and an
+/// instant without one is ambiguous by exactly the hours that matter for
+/// staleness. A legacy `timestamp` stays lenient: v0.1 wrote plain dates, and
+/// tightening a key the spec has already retired would only break documents
+/// that are still perfectly readable.
 fn check_timestamp(manifest: &Manifest, result: &mut ValidationResult) {
-    if let Some(timestamp) = non_empty(manifest.frontmatter.timestamp.as_deref())
+    let frontmatter = &manifest.frontmatter;
+
+    if let Some(timestamp) = non_empty(frontmatter.timestamp.as_deref())
         && !is_iso8601(timestamp)
     {
         result.errors.push(
@@ -246,30 +301,243 @@ fn check_timestamp(manifest: &Manifest, result: &mut ValidationResult) {
             .with_hint("Use `2026-05-06` or `2026-05-06T14:30:00Z`."),
         );
     }
+
+    for (field, value) in v0_2_instants(frontmatter) {
+        if !is_offset_datetime(value) {
+            result.errors.push(
+                Diagnostic::new(
+                    DiagnosticCode::E006,
+                    format!("`{field}` value `{value}` is not an ISO 8601 datetime with an offset"),
+                )
+                .with_hint("Use `2026-05-06T14:30:00Z` or `2026-05-06T14:30:00+02:00`."),
+            );
+        }
+    }
 }
 
+/// Every instant OKF v0.2 defines on a concept, paired with the field path to
+/// report it under.
+///
+/// The list is exhaustive on purpose: upstream tightened *every* timestamp in
+/// the spec to carry an offset, so validating some of them and not others
+/// would let a date-only `last_modified` through while rejecting the same
+/// value in `generated.at`.
+fn v0_2_instants(frontmatter: &Frontmatter) -> Vec<(String, &str)> {
+    let mut instants: Vec<(String, &str)> = Vec::new();
+
+    if let Some(generated) = frontmatter.generated.as_ref()
+        && let Some(at) = non_empty(generated.at.as_deref())
+    {
+        instants.push(("generated.at".to_owned(), at));
+    }
+
+    for (index, verification) in frontmatter.verified.iter().enumerate() {
+        if let Some(at) = non_empty(verification.at.as_deref()) {
+            instants.push((format!("verified[{index}].at"), at));
+        }
+    }
+
+    if let Some(stale_after) = non_empty(frontmatter.stale_after.as_deref()) {
+        instants.push(("stale_after".to_owned(), stale_after));
+    }
+
+    push_window(
+        &mut instants,
+        "usage_window",
+        frontmatter.usage_window.as_ref(),
+    );
+
+    for (index, source) in frontmatter.sources.iter().enumerate() {
+        // A source's own `id` names it better than its position does, and the
+        // id is the key the body cites.
+        let label = source
+            .id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map_or_else(
+                || format!("sources[{index}]"),
+                |id| format!("sources[{id}]"),
+            );
+
+        if let Some(last_modified) = non_empty(source.last_modified.as_deref()) {
+            instants.push((format!("{label}.last_modified"), last_modified));
+        }
+        push_window(
+            &mut instants,
+            &format!("{label}.usage_window"),
+            source.usage_window.as_ref(),
+        );
+    }
+
+    instants
+}
+
+/// Add a `{ from, to }` range's endpoints under `prefix`.
+fn push_window<'a>(
+    instants: &mut Vec<(String, &'a str)>,
+    prefix: &str,
+    window: Option<&'a UsageWindow>,
+) {
+    let Some(window) = window else {
+        return;
+    };
+    if let Some(from) = non_empty(window.from.as_deref()) {
+        instants.push((format!("{prefix}.from"), from));
+    }
+    if let Some(to) = non_empty(window.to.as_deref()) {
+        instants.push((format!("{prefix}.to"), to));
+    }
+}
+
+/// The OKF v0.2 lifecycle signals, both reported as warnings.
+fn check_lifecycle(manifest: &Manifest, result: &mut ValidationResult) {
+    if let Some(stale_after) = non_empty(manifest.frontmatter.stale_after.as_deref())
+        && let Some(diagnostic) = stale_diagnostic(stale_after, Utc::now())
+    {
+        result.warnings.push(diagnostic);
+    }
+
+    if manifest.frontmatter.uses_legacy_timestamp() {
+        result.warnings.push(
+            Diagnostic::new(
+                DiagnosticCode::E017,
+                "`timestamp` is the v0.1 spelling; OKF v0.2 records this as `generated.at`",
+            )
+            .with_hint(
+                "Replace `timestamp: <date>` with \
+                 `generated: { by: human:<id>, at: <date>T00:00:00Z }`. Reading the legacy key \
+                 continues to work, so this never fails a bundle.",
+            ),
+        );
+    }
+}
+
+/// Warn when `now` has reached a concept's `stale_after` instant (OKF §5.5).
+/// Takes `now` so the comparison is testable.
+fn stale_diagnostic(stale_after: &str, now: DateTime<Utc>) -> Option<Diagnostic> {
+    let deadline = DateTime::parse_from_rfc3339(stale_after).ok()?;
+    (now >= deadline.with_timezone(&Utc)).then(|| {
+        Diagnostic::new(
+            DiagnosticCode::E016,
+            format!("concept went stale at `{stale_after}`"),
+        )
+        .with_hint(
+            "Re-check the content and move `stale_after` forward, or drop the key if the \
+             concept no longer expires.",
+        )
+    })
+}
+
+/// Judge the two lifecycle keys and the relationship between them.
+///
+/// `lifecycle` is arkouda's per-type vocabulary; `status` is OKF §5.4's coarse
+/// one. They are not independent: `status` is the projection of `lifecycle`,
+/// so a pair that disagrees is telling a generic OKF consumer something the
+/// bundle's own contract contradicts.
 fn check_status_vocabulary(
     manifest: &Manifest,
     concept_type: &ConceptType,
     result: &mut ValidationResult,
 ) {
-    if let Some(status) = non_empty(manifest.frontmatter.status.as_deref())
-        && concept_type.status(status).is_none()
+    let frontmatter = &manifest.frontmatter;
+    let lifecycle = frontmatter.resolved_lifecycle(Some(concept_type));
+
+    if let Some(declared) = non_empty(frontmatter.lifecycle.as_deref())
+        && concept_type.status(declared).is_none()
     {
         result.errors.push(
             Diagnostic::new(
                 DiagnosticCode::E003,
                 format!(
-                    "invalid status `{status}` for type `{}`",
+                    "invalid lifecycle `{declared}` for type `{}`",
                     concept_type.okf_type
                 ),
             )
             .with_hint(format!("Use one of: {}.", concept_type.status_list())),
         );
     }
+
+    if frontmatter.uses_legacy_status(Some(concept_type)) {
+        let value = lifecycle.unwrap_or_default();
+        let projection = concept_type
+            .status(value)
+            .map_or(OkfStatus::Stable, |status| status.okf);
+        result.warnings.push(
+            Diagnostic::new(
+                DiagnosticCode::E020,
+                format!("`status: {value}` is the pre-0.7 spelling of `lifecycle`"),
+            )
+            .with_hint(format!(
+                "Write `lifecycle: {value}` and `status: {}`. OKF v0.2 §5.4 defines `status` as \
+                 `{}`, so the per-type vocabulary moved to its own key. Reading the old spelling \
+                 continues to work.",
+                projection.name(),
+                OkfStatus::vocabulary()
+            )),
+        );
+        return;
+    }
+
+    let Some(declared) = non_empty(frontmatter.status.as_deref()) else {
+        // Absent `status` means `stable` (§5.4). That is a lie only when the
+        // lifecycle projects elsewhere.
+        if let Some(expected) = lifecycle.and_then(|value| concept_type.status(value))
+            && expected.okf != OkfStatus::Stable
+        {
+            result.errors.push(
+                Diagnostic::new(
+                    DiagnosticCode::E019,
+                    format!(
+                        "no `status`, which OKF reads as `stable`, but `lifecycle: {}` is `{}`",
+                        expected.name,
+                        expected.okf.name()
+                    ),
+                )
+                .with_hint(format!("Add `status: {}`.", expected.okf.name())),
+            );
+        }
+        return;
+    };
+
+    let Some(declared) = OkfStatus::parse(declared) else {
+        result.errors.push(
+            Diagnostic::new(
+                DiagnosticCode::E018,
+                format!("`status: {declared}` is not an OKF status"),
+            )
+            .with_hint(format!(
+                "OKF v0.2 §5.4 defines `status` as `{}`. A per-type value belongs in \
+                 `lifecycle`.",
+                OkfStatus::vocabulary()
+            )),
+        );
+        return;
+    };
+
+    if let Some(expected) = lifecycle.and_then(|value| concept_type.status(value))
+        && expected.okf != declared
+    {
+        result.errors.push(
+            Diagnostic::new(
+                DiagnosticCode::E019,
+                format!(
+                    "`status: {}` contradicts `lifecycle: {}`, which is `{}`",
+                    declared.name(),
+                    expected.name,
+                    expected.okf.name()
+                ),
+            )
+            .with_hint(format!(
+                "Set `status: {}`, or change the lifecycle. `status` is the OKF projection of \
+                 `lifecycle`, not a second opinion.",
+                expected.okf.name()
+            )),
+        );
+    }
 }
 
-/// Validate an `index.md` (OKF §6, §11). Frontmatter is permitted only in a
+/// Validate an `index.md` (OKF §8, §12). Frontmatter is permitted only in a
 /// bundle-root index, and only to declare `okf_version`.
 pub fn validate_index(content: &str, is_bundle_root: bool) -> ValidationResult {
     let mut result = ValidationResult::default();
@@ -336,7 +604,10 @@ pub fn validate_index(content: &str, is_bundle_root: bool) -> ValidationResult {
                         "bundle declares OKF version `{declared}`; arkouda implements {OKF_VERSION}"
                     ),
                 )
-                .with_hint("Consumption continues on a best-effort basis (OKF §11)."),
+                .with_hint(
+                    "Consumption continues on a best-effort basis (OKF §11). If the bundle is \
+                     arkouda's own, `arkouda index` rewrites the declaration.",
+                ),
             );
         }
     }
@@ -344,7 +615,7 @@ pub fn validate_index(content: &str, is_bundle_root: bool) -> ValidationResult {
     result
 }
 
-/// Validate a `log.md` (OKF §7). Every `##` heading must be an ISO 8601 date.
+/// Validate a `log.md` (OKF §9). Every `##` heading must be an ISO 8601 date.
 pub fn validate_log(content: &str) -> ValidationResult {
     let mut result = ValidationResult::default();
 
@@ -369,7 +640,7 @@ pub fn validate_log(content: &str) -> ValidationResult {
 }
 
 /// Compare an existing bundle-root `index.md` against what arkouda would
-/// generate. A stale index is a warning: OKF §9 forbids rejecting a bundle
+/// generate. A stale index is a warning: OKF §11 forbids rejecting a bundle
 /// over its index, and a missing one is always fine.
 pub fn check_index_freshness(existing: &str, rendered: &str) -> Option<Diagnostic> {
     (existing.trim_end() != rendered.trim_end()).then(|| {
@@ -379,6 +650,11 @@ pub fn check_index_freshness(existing: &str, rendered: &str) -> Option<Diagnosti
         )
         .with_hint("Run `arkouda index` to regenerate it.")
     })
+}
+
+/// Accept only an ISO 8601 datetime carrying an explicit UTC offset.
+fn is_offset_datetime(value: &str) -> bool {
+    DateTime::parse_from_rfc3339(value).is_ok()
 }
 
 /// Accept an ISO 8601 calendar date, an offset datetime, or a local datetime.
@@ -466,8 +742,10 @@ fn check_required_field(
     }
 }
 
-/// A concept document is a Markdown document with a title (OKF §3.2), so a
-/// missing `#` heading is an OKF-tier error regardless of type.
+/// Arkouda's profile requires a `#` heading. OKF §4.2 does not — it requires
+/// no body sections at all — so this is arkouda's contract, applied only to
+/// concepts whose type it knows, and never a reason to fail a bundle whose
+/// types the project has not described.
 fn check_title_heading_present(manifest: &Manifest, result: &mut ValidationResult) {
     if markdown::headings(&manifest.body)
         .iter()
@@ -606,8 +884,9 @@ mod tests {
 type: Architecture Decision Record
 title: Basic ADR CLI
 description: Navigate ADRs.
-status: proposed
-timestamp: 2026-05-06
+status: draft
+lifecycle: proposed
+generated: { by: human:test, at: 2026-05-06T00:00:00Z }
 ---
 
 # Basic ADR CLI
@@ -637,7 +916,8 @@ type: Product Requirements Document
 title: Bulk ADR Import
 description: Import a directory of loose Markdown files as ADRs.
 status: draft
-timestamp: 2026-08-07
+lifecycle: draft
+generated: { by: human:test, at: 2026-08-07T00:00:00Z }
 ---
 
 # Bulk ADR Import
@@ -720,8 +1000,9 @@ Metrics.
 type: Architecture Decision Record
 title: Basic ADR CLI
 description: Navigate ADRs.
-status: proposed
-timestamp: 2026-05-06
+status: draft
+lifecycle: proposed
+generated: { by: human:test, at: 2026-05-06T00:00:00Z }
 ---
 
 # Basic ADR CLI
@@ -795,8 +1076,10 @@ An ADR template looks like this:
 
     #[test]
     fn an_unconfigured_type_is_still_checked_for_okf_conformance() {
-        // The concept is not skipped: its id and its `#` heading are OKF's
-        // business whatever the document claims to be.
+        // The concept is not skipped: its id is OKF's business whatever the
+        // document claims to be. Its `#` heading is not — OKF §4.2 requires no
+        // body sections, so failing a heading would reject a conformant
+        // bundle.
         let content = good_adr()
             .replace("Architecture Decision Record", "BigQuery Table")
             .replace("# Basic ADR CLI\n", "");
@@ -804,12 +1087,12 @@ An ADR template looks like this:
         let result = validate(&manifest);
 
         assert!(
-            codes(&result).contains(&DiagnosticCode::E007),
-            "a missing title heading is OKF-tier: {result:#?}"
-        );
-        assert!(
             codes(&result).contains(&DiagnosticCode::E004),
             "a non-slug concept id is OKF-tier: {result:#?}"
+        );
+        assert!(
+            !codes(&result).contains(&DiagnosticCode::E007),
+            "a missing heading is arkouda's profile, not OKF's: {result:#?}"
         );
     }
 
@@ -836,16 +1119,365 @@ An ADR template looks like this:
     }
 
     #[test]
+    fn generated_at_supersedes_the_legacy_timestamp() {
+        // OKF v0.2 §13.1. Both spellings satisfy the profile; `generated.at`
+        // wins when both are present, and only the legacy one warns.
+        let legacy = good_adr().replace(
+            "generated: { by: human:test, at: 2026-05-06T00:00:00Z }",
+            "timestamp: 2026-05-06",
+        );
+        let manifest = parse("docs/adr/x.md", &legacy);
+        assert!(
+            validate(&manifest).errors.is_empty(),
+            "v0.1 still validates"
+        );
+        assert_eq!(warning_codes(&validate(&manifest)), [DiagnosticCode::E017]);
+        assert_eq!(manifest.frontmatter.content_timestamp(), Some("2026-05-06"));
+
+        let current = parse("docs/adr/x.md", &good_adr());
+        assert!(validate(&current).warnings.is_empty(), "v0.2 is quiet");
+        assert_eq!(
+            current.frontmatter.content_timestamp(),
+            Some("2026-05-06T00:00:00Z")
+        );
+
+        let both = good_adr().replace("generated: {", "timestamp: 1999-01-01\ngenerated: {");
+        assert_eq!(
+            parse("docs/adr/x.md", &both)
+                .frontmatter
+                .content_timestamp(),
+            Some("2026-05-06T00:00:00Z"),
+            "`generated.at` is the record of the last change, not the legacy key"
+        );
+    }
+
+    #[test]
+    fn a_concept_with_no_timestamp_at_all_fails() {
+        let content = good_adr().replace(
+            "generated: { by: human:test, at: 2026-05-06T00:00:00Z }\n",
+            "",
+        );
+        assert!(
+            codes(&validate(&parse("docs/adr/x.md", &content))).contains(&DiagnosticCode::E001)
+        );
+
+        // `generated` present but carrying no instant is an empty field, not a
+        // missing one.
+        let content = good_adr().replace(
+            "generated: { by: human:test, at: 2026-05-06T00:00:00Z }",
+            "generated: { by: human:test }",
+        );
+        assert!(
+            codes(&validate(&parse("docs/adr/x.md", &content))).contains(&DiagnosticCode::E002)
+        );
+    }
+
+    #[test]
+    fn v0_2_instants_must_carry_an_offset() {
+        // Upstream tightened every v0.2 timestamp to an explicit offset. A
+        // bare date is ambiguous by exactly the hours staleness turns on.
+        let dated = "generated: { by: human:test, at: 2026-05-06T00:00:00Z }";
+        // Every instant the spec defines, not just the headline three:
+        // upstream tightened all of them together, so validating some and not
+        // others would let a date-only `last_modified` through while
+        // rejecting the same value in `generated.at`.
+        for (field, value) in [
+            (
+                "generated: { by: human:test, at: 2026-05-06 }".to_owned(),
+                "generated.at",
+            ),
+            (format!("{dated}\nstale_after: 2026-05-06"), "stale_after"),
+            (
+                format!("{dated}\nverified: {{ by: human:a, at: 2026-05-06 }}"),
+                "verified[0].at",
+            ),
+            (
+                format!("{dated}\nusage_window: {{ from: 2026-06-01, to: 2026-06-30T00:00:00Z }}"),
+                "usage_window.from",
+            ),
+            (
+                format!(
+                    "{dated}\nsources:\n  - id: s1\n    resource: https://x.test\n    last_modified: 2026-05-30"
+                ),
+                "sources[s1].last_modified",
+            ),
+            (
+                format!(
+                    "{dated}\nsources:\n  - resource: https://x.test\n    usage_window: {{ from: 2026-06-01T00:00:00Z, to: 2026-06-30 }}"
+                ),
+                "sources[0].usage_window.to",
+            ),
+        ] {
+            let content = good_adr().replace(dated, &field);
+            let result = validate(&parse("docs/adr/x.md", &content));
+            assert!(
+                result
+                    .errors
+                    .iter()
+                    .any(|d| d.code == DiagnosticCode::E006 && d.message.contains(value)),
+                "{value} must be rejected without an offset: {result:#?}"
+            );
+        }
+
+        // The retired v0.1 key stays lenient: it was specified as a date.
+        let legacy = good_adr().replace(
+            "generated: { by: human:test, at: 2026-05-06T00:00:00Z }",
+            "timestamp: 2026-05-06",
+        );
+        assert!(validate(&parse("docs/adr/x.md", &legacy)).errors.is_empty());
+    }
+
+    #[test]
+    fn a_bare_verified_mapping_is_one_element() {
+        // OKF §11 makes this a MUST for consumers.
+        let bare = r#"---
+type: Architecture Decision Record
+title: T
+description: D
+status: draft
+lifecycle: proposed
+generated: { by: human:test, at: 2026-05-06T00:00:00Z }
+verified: { by: human:ahormati, at: 2026-06-25T09:00:00Z }
+---
+
+# T
+
+## Status
+
+## Context
+
+## Decision
+
+## Consequences
+"#;
+        let manifest = parse("docs/adr/x.md", bare);
+        assert_eq!(manifest.frontmatter.verified.len(), 1);
+        assert_eq!(
+            manifest.frontmatter.verified[0].by.as_deref(),
+            Some("human:ahormati")
+        );
+
+        let listed = bare.replace(
+            "verified: { by: human:ahormati, at: 2026-06-25T09:00:00Z }",
+            "verified:\n  - { by: human:a, at: 2026-06-25T09:00:00Z }\n  - { by: process:nightly, at: 2026-06-26T02:00:00Z }",
+        );
+        let manifest = parse("docs/adr/x.md", &listed);
+        assert_eq!(manifest.frontmatter.verified.len(), 2);
+        assert!(validate(&manifest).errors.is_empty());
+    }
+
+    #[test]
+    fn staleness_is_a_warning_once_the_instant_has_passed() {
+        let deadline = "2026-09-23T00:00:00Z";
+        let before = DateTime::parse_from_rfc3339("2026-09-22T23:59:59Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let after = DateTime::parse_from_rfc3339("2026-09-23T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        assert!(stale_diagnostic(deadline, before).is_none());
+        assert_eq!(
+            stale_diagnostic(deadline, after).map(|d| d.code),
+            Some(DiagnosticCode::E016),
+            "a concept is stale on the instant, not after it"
+        );
+        assert!(
+            stale_diagnostic("not-a-date", after).is_none(),
+            "a malformed instant is E006's business, not a false staleness claim"
+        );
+    }
+
+    #[test]
+    fn the_v0_2_families_round_trip() {
+        // Arkouda parses provenance rather than merely tolerating it, so a
+        // v0.2 bundle is understood and nothing is silently dropped.
+        let content = r#"---
+type: Architecture Decision Record
+title: T
+description: D
+status: draft
+lifecycle: proposed
+generated: { by: reference_agent/gemini-2.5-pro, at: 2026-05-06T00:00:00Z }
+stale_after: 3000-01-01T00:00:00Z
+usage_window: { from: 2026-06-01T00:00:00Z, to: 2026-06-30T00:00:00Z }
+sources:
+  - id: ga4-schema
+    resource: https://example.test/schema
+    title: GA4 export schema
+    author: team:ga4-docs
+    usage_count: 5000
+    last_modified: 2026-05-30T00:00:00Z
+---
+
+# T
+
+## Status
+
+## Context
+
+## Decision
+
+## Consequences
+"#;
+        let manifest = parse("docs/adr/x.md", content);
+        let frontmatter = &manifest.frontmatter;
+
+        assert_eq!(frontmatter.sources.len(), 1);
+        assert_eq!(frontmatter.sources[0].id.as_deref(), Some("ga4-schema"));
+        assert_eq!(frontmatter.sources[0].usage_count, Some(5000));
+        assert_eq!(
+            frontmatter.sources[0].author.as_deref(),
+            Some("team:ga4-docs")
+        );
+        assert_eq!(
+            frontmatter
+                .usage_window
+                .as_ref()
+                .and_then(|w| w.to.as_deref()),
+            Some("2026-06-30T00:00:00Z")
+        );
+        assert_eq!(
+            frontmatter.generated.as_ref().and_then(|g| g.by.as_deref()),
+            Some("reference_agent/gemini-2.5-pro")
+        );
+        assert!(
+            validate(&manifest).errors.is_empty(),
+            "a fully-populated v0.2 concept is clean: {:#?}",
+            validate(&manifest).errors
+        );
+    }
+
+    #[test]
+    fn status_carries_okfs_vocabulary_and_lifecycle_carries_the_types() {
+        // The split this release is about: `status` is what a generic OKF
+        // consumer reads, `lifecycle` is what a reader of decisions wants.
+        let manifest = parse("docs/adr/x.md", &good_adr());
+        assert_eq!(manifest.frontmatter.status.as_deref(), Some("draft"));
+        assert_eq!(
+            manifest
+                .frontmatter
+                .resolved_lifecycle(manifest.concept_type()),
+            Some("proposed")
+        );
+        assert!(validate(&manifest).errors.is_empty());
+    }
+
+    #[test]
+    fn a_per_type_value_in_status_is_rejected() {
+        // `accepted` is not an OKF status. Left unchecked it would tell every
+        // generic consumer nothing it can use.
+        let content = good_adr().replace("status: draft", "status: accepted");
+        let result = validate(&parse("docs/adr/x.md", &content));
+        assert!(
+            codes(&result).contains(&DiagnosticCode::E018),
+            "{result:#?}"
+        );
+    }
+
+    #[test]
+    fn status_must_agree_with_the_lifecycle_it_projects_from() {
+        // A `rejected` ADR advertised as `stable` is the exact fidelity loss
+        // adopting OKF's vocabulary was meant to fix.
+        let content = good_adr().replace(
+            "status: draft\nlifecycle: proposed",
+            "status: stable\nlifecycle: rejected",
+        );
+        let result = validate(&parse("docs/adr/x.md", &content));
+        assert!(
+            codes(&result).contains(&DiagnosticCode::E019),
+            "{result:#?}"
+        );
+
+        // Absent `status` means `stable` (§5.4), so it is equally wrong when
+        // the lifecycle projects elsewhere — and fine when it does not.
+        let omitted =
+            good_adr().replace("status: draft\nlifecycle: proposed", "lifecycle: rejected");
+        assert!(
+            codes(&validate(&parse("docs/adr/x.md", &omitted))).contains(&DiagnosticCode::E019)
+        );
+
+        let omitted =
+            good_adr().replace("status: draft\nlifecycle: proposed", "lifecycle: accepted");
+        assert!(
+            validate(&parse("docs/adr/x.md", &omitted))
+                .errors
+                .is_empty()
+        );
+
+        let agreeing = good_adr().replace(
+            "status: draft\nlifecycle: proposed",
+            "status: deprecated\nlifecycle: superseded",
+        );
+        assert!(
+            validate(&parse("docs/adr/x.md", &agreeing))
+                .errors
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn the_pre_0_7_spelling_still_reads_as_a_lifecycle() {
+        // Before 0.7 the per-type value lived in `status`. A bundle written
+        // then keeps sorting, grouping and displaying, and is told what moved.
+        let legacy = good_adr().replace("status: draft\nlifecycle: proposed", "status: accepted");
+        let manifest = parse("docs/adr/x.md", &legacy);
+
+        assert_eq!(
+            manifest
+                .frontmatter
+                .resolved_lifecycle(manifest.concept_type()),
+            Some("accepted"),
+            "the old key is read as the lifecycle it always was"
+        );
+        assert_eq!(manifest.frontmatter.display_status(), "accepted");
+
+        let result = validate(&manifest);
+        assert!(
+            result.errors.is_empty(),
+            "never a failure: {:#?}",
+            result.errors
+        );
+        assert_eq!(warning_codes(&result), [DiagnosticCode::E020]);
+        assert!(
+            result.warnings[0]
+                .fix_hint
+                .as_deref()
+                .unwrap()
+                .contains("status: stable"),
+            "the hint names the projection to write: {:#?}",
+            result.warnings[0]
+        );
+
+        // A legacy value is not also reported as a bad OKF status.
+        assert!(!codes(&result).contains(&DiagnosticCode::E018));
+    }
+
+    #[test]
+    fn a_missing_lifecycle_is_reported_against_the_new_key() {
+        let content = good_adr().replace("status: draft\nlifecycle: proposed\n", "");
+        let result = validate(&parse("docs/adr/x.md", &content));
+        assert!(codes(&result).contains(&DiagnosticCode::E001));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|d| d.message.contains("lifecycle")),
+            "{result:#?}"
+        );
+    }
+
+    #[test]
     fn statuses_are_checked_against_the_declared_type() {
         // `shipped` is valid for a PRD and invalid for an ADR; `accepted` is
         // the other way round.
-        let adr = good_adr().replace("status: proposed", "status: shipped");
+        let adr = good_adr().replace("lifecycle: proposed", "lifecycle: shipped");
         assert!(codes(&validate(&parse("docs/adr/x.md", &adr))).contains(&DiagnosticCode::E003));
 
-        let prd = good_prd().replace("status: draft", "status: accepted");
+        let prd = good_prd().replace("lifecycle: draft", "lifecycle: accepted");
         assert!(codes(&validate(&parse("docs/prd/x.md", &prd))).contains(&DiagnosticCode::E003));
 
-        let prd = good_prd().replace("status: draft", "status: in-review");
+        let prd = good_prd().replace("lifecycle: draft", "lifecycle: in-review");
         assert!(validate(&parse("docs/prd/x.md", &prd)).errors.is_empty());
     }
 
@@ -861,7 +1493,10 @@ An ADR template looks like this:
 
     #[test]
     fn rejects_a_non_iso_timestamp() {
-        let content = good_adr().replace("timestamp: 2026-05-06", "timestamp: 06/05/2026");
+        let content = good_adr().replace(
+            "generated: { by: human:test, at: 2026-05-06T00:00:00Z }",
+            "timestamp: 06/05/2026",
+        );
         let manifest = parse("docs/adr/basic-adr-cli.md", &content);
         assert!(codes(&validate(&manifest)).contains(&DiagnosticCode::E006));
     }
@@ -892,8 +1527,8 @@ An ADR template looks like this:
     #[test]
     fn a_resolvable_reference_is_clean() {
         let prd = good_prd().replace(
-            "status: draft",
-            "status: draft\ndecisions:\n  - basic-adr-cli",
+            "lifecycle: draft",
+            "lifecycle: draft\ndecisions:\n  - basic-adr-cli",
         );
         let results = validate_collection(&[
             parse("docs/prd/bulk-adr-import.md", &prd),
@@ -907,7 +1542,7 @@ An ADR template looks like this:
 
     #[test]
     fn a_dangling_reference_warns_without_failing_the_bundle() {
-        let prd = good_prd().replace("status: draft", "status: draft\ndecisions:\n  - gone");
+        let prd = good_prd().replace("lifecycle: draft", "lifecycle: draft\ndecisions:\n  - gone");
         let results = validate_collection(&[parse("docs/prd/bulk-adr-import.md", &prd)]);
         assert_eq!(warning_codes(&results[0]), [DiagnosticCode::E015]);
         assert!(
@@ -920,8 +1555,8 @@ An ADR template looks like this:
     fn superseded_by_is_resolved_too() {
         // Parsed since it was introduced, never checked until now.
         let content = good_adr().replace(
-            "status: proposed",
-            "status: superseded\nsuperseded_by: gone",
+            "status: draft\nlifecycle: proposed",
+            "status: deprecated\nlifecycle: superseded\nsuperseded_by: gone",
         );
         let results = validate_collection(&[parse("docs/adr/basic-adr-cli.md", &content)]);
         assert_eq!(warning_codes(&results[0]), [DiagnosticCode::E015]);
@@ -937,7 +1572,7 @@ An ADR template looks like this:
 
     #[test]
     fn only_a_root_index_may_declare_the_okf_version() {
-        let content = "---\nokf_version: \"0.1\"\n---\n\n# Accepted\n";
+        let content = "---\nokf_version: \"0.2\"\n---\n\n# Accepted\n";
         assert!(validate_index(content, true).errors.is_empty());
 
         let nested = validate_index(content, false);

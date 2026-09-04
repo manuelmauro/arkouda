@@ -227,8 +227,9 @@ type: Architecture Decision Record
 title: Use Postgres
 description: Store relational data in Postgres.
 tags: []
-timestamp: 2026-05-06
-status: accepted
+generated: { by: human:test, at: 2026-05-06T00:00:00Z }
+status: stable
+lifecycle: accepted
 deciders: []
 ---
 
@@ -321,7 +322,7 @@ x
         let bundles = [bundle(&root.join("a"), &["use-postgres"])];
         std::fs::write(
             root.join("a/index.md"),
-            "---\nokf_version: \"0.1\"\n---\n\n# Accepted\n\n* [Gone](gone.md)\n",
+            "---\nokf_version: \"0.2\"\n---\n\n# Accepted\n\n* [Gone](gone.md)\n",
         )
         .expect("write index");
 
@@ -356,7 +357,7 @@ x
         let mut single = bundle(&root.join("a"), &["use-postgres", "use-kafka"]);
         std::fs::write(
             root.join("a/index.md"),
-            "---\nokf_version: \"0.1\"\n---\n\n# Accepted\n",
+            "---\nokf_version: \"0.2\"\n---\n\n# Accepted\n",
         )
         .expect("write index");
 

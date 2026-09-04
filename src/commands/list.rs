@@ -110,8 +110,9 @@ mod tests {
     use std::path::Path;
 
     fn manifest(id: &str, concept_type: &str) -> Manifest {
-        let content =
-            format!("---\ntype: {concept_type}\ntitle: {id}\nstatus: draft\n---\n\n# {id}\n");
+        let content = format!(
+            "---\ntype: {concept_type}\ntitle: {id}\nstatus: draft\nlifecycle: draft\n---\n\n# {id}\n"
+        );
         Manifest::parse_content(
             &Path::new("docs/adr").join(format!("{id}.md")),
             Path::new("docs/adr"),
