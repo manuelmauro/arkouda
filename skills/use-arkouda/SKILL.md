@@ -76,23 +76,26 @@ The source rationale lives in arkouda's own repo, in the ADRs [`defer-to-unix-to
 
 The location varies between repos. Don't hardcode `docs/adr/` in pipelines — ask arkouda. Run **`arkouda list`** to get the actual paths for the repo you're in.
 
-Resolution order, in case you need to set or override the location:
+Arkouda **finds** bundles; nothing configures them. A bundle is the topmost
+directory that directly contains an OKF concept — a non-reserved `.md` whose
+frontmatter declares a `type` — and everything beneath it belongs to that
+bundle, so a nested concept keeps its path in its id. `list`, `check`,
+`section`, and `index` read every bundle found; type comes from frontmatter,
+never from the directory.
 
-1. `--dir <path>` flag (one-shot override, single directory, applies to every type).
-2. `ADR_DIR=<path>` environment variable (session override, single directory).
-3. `.arkoudarc.toml` at the repo root (or any ancestor of the cwd), in either of two forms:
-   ```toml
-   # Flat: every type shares these roots. Useful in monorepos.
-   dirs = ["docs/adr", "services/billing/docs/adr"]
-   ```
-   ```toml
-   # Typed: roots per type.
-   [dirs]
-   adr = ["docs/adr"]
-   prd = ["docs/prd"]
-   ```
-   Relative paths resolve against the config file's directory. `arkouda list`, `check`, `section`, and `index` work over the union of every root — type comes from frontmatter, not from the directory — while `arkouda new` writes into the first root configured for the type it is creating. A `[dirs]` key must name a type the project has: a built-in, or one of its own `[[types]]`.
-4. Default: each type's own `default_dir` — `docs/adr/` for ADRs, `docs/prd/` for PRDs.
+The walk skips `.git`, `node_modules`, `target`, `vendor`, `dist`, `build`,
+`out`, `.next`, `.venv`, `venv`, `__pycache__`, `coverage`, and hidden
+directories.
+
+To scope one invocation to part of the tree, use `--dir <path>` or
+`ADR_DIR=<path>`. It narrows the walk rather than declaring a root.
+
+`arkouda new` writes into the first bundle that already holds a concept of the
+type it is creating, then the `--dir` you named, then that type's `default_dir`.
+
+**`.arkoudarc.toml` no longer says where bundles are.** A `dirs` key is an error
+naming its replacement; delete it. The file's remaining jobs are declaring
+`[[types]]` and the telemetry toggle.
 
 A concept id is the document's path *within its bundle*, minus the `.md` suffix — not just the filename. A top-level `use-postgres.md` has the id `use-postgres`; a nested `security/mtls.md` has the id `security/mtls`. `arkouda section` accepts the full concept id (`security/mtls`), the bare stem (`mtls`), or the filename.
 
@@ -318,7 +321,7 @@ Each diagnostic has a code; the hint usually tells you the exact fix.
 - **E012** `log.md` heading is not `## YYYY-MM-DD`.
 - **E013** *(warning)* bundle declares an OKF version arkouda doesn't implement.
 - **E014** *(warning)* `index.md` is stale → run `arkouda index`.
-- **E015** *(warning)* a `decisions` or `superseded_by` entry doesn't resolve to a loaded concept → fix the id, or widen `--dir`/`dirs` if it lives in a bundle this run didn't load. It's a warning precisely because arkouda can't tell a broken reference from an out-of-scope one.
+- **E015** *(warning)* a `decisions` or `superseded_by` entry doesn't resolve to a loaded concept → fix the id, or widen `--dir` if it lives in a bundle this run didn't load. It's a warning precisely because arkouda can't tell a broken reference from an out-of-scope one.
 - **E016** *(warning)* the concept is past its `stale_after` instant → re-check the content and move `stale_after` forward, or drop the key. Worth heeding before you rely on the concept: it says the author expected it to need review by now.
 - **E017** *(warning)* the concept uses v0.1's `timestamp` → replace it with `generated: { by: human:<id>, at: <date>T00:00:00Z }`. Reading the old key still works, so this never fails anything.
 

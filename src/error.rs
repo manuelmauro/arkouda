@@ -105,16 +105,6 @@ pub enum ArkoudaError {
         path: String,
     },
 
-    /// `arkouda new` was asked for a type the configuration gives no directory
-    /// to write into.
-    #[error(
-        "No directory is configured for `--type {slug}`; add `{slug} = [\"<path>\"]` under \
-         `[dirs]` in .arkoudarc.toml, or pass --dir"
-    )]
-    NoDirForType {
-        /// The type's CLI slug.
-        slug: String,
-    },
 
     /// An operation that rewrites the bundle was asked to run against a single
     /// concept file rather than the bundle root.

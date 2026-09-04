@@ -221,31 +221,17 @@ Following OKF's permissive-consumption rule (§11), seven diagnostics are **warn
 
 ## Configuration
 
-`--dir <path>` (and the `ADR_DIR` env var) point arkouda at a single directory and override everything else, for every type. With neither set, arkouda walks up from the working directory looking for `.arkoudarc.toml`; if found, its `dirs` entry is used. With nothing configured, each type falls back to its own default: `docs/adr` and `docs/prd`.
+Arkouda finds bundles rather than being told where they are. A **bundle is the topmost directory that directly contains an OKF concept** — a non-reserved `.md` whose frontmatter declares a `type` — and everything beneath it belongs to that bundle, so a nested concept keeps its path in its id. Add `docs/rfc` and `arkouda check` covers it on the next run, with no configuration to remember.
 
-`dirs` takes two forms. The **flat** form is one list every type shares — useful for monorepos that keep documents per service or area:
+`arkouda list`, `check`, `section`, and `index` read every bundle found. A concept's type is a fact about its frontmatter, not about where it sits, so nothing is skipped on the strength of a directory.
 
-```toml
-dirs = [
-  "docs/adr",
-  "services/billing/docs/adr",
-  "services/identity/docs/adr",
-]
-```
+The walk skips `.git`, `node_modules`, `target`, `vendor`, `dist`, `build`, `out`, `.next`, `.venv`, `venv`, `__pycache__`, `coverage`, and hidden directories. That is about correctness as much as speed: a vendored dependency carrying its own OKF documents must not have them adopted as yours.
 
-The **typed** form gives each type its own roots:
+`--dir <path>` (and the `ADR_DIR` env var) scope one invocation to a subtree — useful for checking a single bundle in CI. It narrows the walk; it does not declare a root.
 
-```toml
-[dirs]
-adr = ["docs/adr"]
-prd = ["docs/prd"]
-```
+`arkouda new` writes into the first bundle that already holds a concept of the type it is creating, then into the `--dir` you named, then into the type's `default_dir`. So a project whose ADRs live in `knowledge/decisions` gets its next one there rather than in a fresh `docs/adr`.
 
-Both parse into the same model: a type-to-roots map, plus the union of every root. Relative paths resolve against the location of the config file, so the same file works from any subdirectory. `arkouda list`, `check`, `section`, and `index` work over the union — a concept's type is a fact about its frontmatter, not about where it sits, so nothing is skipped on the strength of a directory. `arkouda new` writes into the first root configured for the type it is creating (use `--dir` to target another). A typed table is a complete declaration: a type it does not mention has no root, and `arkouda new` for that type says so rather than inventing a directory.
-
-| Setting   | Default                    | Override (low → high precedence)                         |
-| --------- | -------------------------- | -------------------------------------------------------- |
-| Bundle dirs | `docs/adr`, `docs/prd`   | `.arkoudarc.toml` `dirs` → `ADR_DIR=<path>` → `--dir <path>` |
+`.arkoudarc.toml` no longer says where bundles are. **A `dirs` key is an error** naming its replacement — inert configuration that still looks authoritative is worse than none. The file's remaining job is declaring types and the telemetry toggle. See [`discover-bundles`](docs/adr/discover-bundles.md).
 
 ### Declaring your own concept types
 

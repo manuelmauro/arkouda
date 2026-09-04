@@ -4,7 +4,7 @@ use crate::cli::Cli;
 use crate::concept::DiagnosticCode;
 use crate::concept::types::{self, ConceptType, Origin};
 use crate::concept::{Manifest, discovery};
-use crate::config::{self, Dirs};
+use crate::config;
 use crate::error::{ArkoudaError, Result};
 use std::path::{Path, PathBuf};
 
@@ -77,19 +77,26 @@ pub(crate) fn resolve_type(slug: &str) -> Result<&'static ConceptType> {
     })
 }
 
-/// Resolve the effective bundle roots for this invocation: CLI flag wins,
-/// then `.arkoudarc.toml`, then each type's default directory.
-pub(crate) fn effective_dirs(cli: &Cli) -> Result<Dirs> {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    config::effective_dirs(cli.dir.as_deref(), &cwd)
+/// Where discovery starts: `--dir` when given, else the working directory.
+///
+/// `--dir` narrows the walk to a subtree rather than declaring a root (ADR
+/// `discover-bundles`), which is what keeps "check one bundle in CI" working
+/// now that nothing configures roots.
+fn discovery_root(cli: &Cli) -> PathBuf {
+    cli.dir.as_deref().map(Path::to_path_buf).unwrap_or_else(|| {
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    })
 }
 
-/// The roots `list`, `check`, `section`, and `index` read: every configured
-/// directory, whatever type it was configured for. A concept's type is a fact
-/// about its frontmatter, not about where it sits, so nothing may be skipped
-/// on the strength of a directory alone.
+/// The bundles `list`, `check`, `section`, and `index` read.
+///
+/// Found by walking, not configured. A concept's type is a fact about its
+/// frontmatter and not about where it sits, so every bundle is read whatever
+/// type the caller cares about — the same reason the old `dirs` union existed.
 pub(crate) fn search_dirs(cli: &Cli) -> Result<Vec<PathBuf>> {
-    Ok(effective_dirs(cli)?.union())
+    let start = discovery_root(cli);
+    config::check_config(&start)?;
+    Ok(discovery::find_bundles(&start)?)
 }
 
 /// The bundle root for a configured directory. When the directory is really a
@@ -189,15 +196,35 @@ fn format_dirs(dirs: &[PathBuf]) -> String {
     }
 }
 
-/// The directory `new` writes a concept of this type into: the first root
-/// configured for it.
-pub(crate) fn write_dir<'a>(dirs: &'a Dirs, concept_type: &ConceptType) -> Result<&'a Path> {
-    dirs.for_type(concept_type)
-        .first()
-        .map(PathBuf::as_path)
-        .ok_or_else(|| ArkoudaError::NoDirForType {
-            slug: concept_type.slug.to_owned(),
-        })
+/// The directory `new` writes a concept of this type into.
+///
+/// Three steps, in order:
+///
+///  1. the first discovered bundle that already holds a concept of this type;
+///  2. the `--dir` the caller named, when they named one;
+///  3. the type's `default_dir`, relative to where discovery started.
+///
+/// The first matters because a project whose ADRs live in `knowledge/decisions`
+/// would otherwise have them found by `check` and then have `new` start a
+/// second bundle in `docs/adr`. The second keeps `--dir` meaning what it always
+/// did for `new`: put it there. The third has to be joined onto the discovery
+/// root rather than used bare — a relative `default_dir` resolved against the
+/// process working directory writes into whatever repository the shell happens
+/// to be sitting in.
+pub(crate) fn write_dir(cli: &Cli, concept_type: &'static ConceptType) -> Result<PathBuf> {
+    for bundle in search_dirs(cli)? {
+        let holds_type = discovery::find_concepts(&bundle)?
+            .iter()
+            .filter_map(|path| Manifest::parse(path, &bundle).ok())
+            .any(|manifest| manifest.frontmatter.resolved_type() == Some(concept_type));
+        if holds_type {
+            return Ok(bundle);
+        }
+    }
+    if let Some(dir) = cli.dir.as_deref() {
+        return Ok(dir.to_path_buf());
+    }
+    Ok(discovery_root(cli).join(&concept_type.default_dir))
 }
 
 /// Find the one concept `query` names, by concept id, filename stem, or
