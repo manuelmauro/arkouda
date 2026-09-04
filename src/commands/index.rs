@@ -1,13 +1,14 @@
 //! Generate the OKF §6 `index.md` for each configured bundle.
 
 use crate::cli::Cli;
+use crate::commands::Outcome;
 use crate::concept::index;
 use crate::error::{ArkoudaError, Result};
 use colored::Colorize;
 use std::path::Path;
 
 /// Run the index command.
-pub fn run(cli: &Cli) -> Result<i32> {
+pub fn run(cli: &Cli) -> Result<Outcome> {
     let dirs = super::search_dirs(cli)?;
 
     for bundle in super::load_bundles(&dirs)? {
@@ -30,7 +31,7 @@ pub fn run(cli: &Cli) -> Result<i32> {
         }
     }
 
-    Ok(0)
+    Ok(Outcome::from(0))
 }
 
 /// Write `content` to `root/index.md`, returning the path written.

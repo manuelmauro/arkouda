@@ -6,6 +6,8 @@
 //! `telemetry-for-agent-command-invocations` for the full rationale.
 
 use crate::cli::{Cli, Command, SelfCommand};
+use crate::commands::Outcome;
+use crate::concept::types::Origin;
 use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use std::fs::{File, OpenOptions};
@@ -50,11 +52,22 @@ pub struct Event {
     pub agent_source: Option<String>,
     /// Whether stdout is a TTY at invocation time.
     pub tty: bool,
+    /// Diagnostic codes this invocation produced, sorted and deduplicated.
+    /// Omitted when there are none, so the field costs nothing on the commands
+    /// that never validate.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub codes: Vec<String>,
+    /// Whether the concept type this invocation resolved is built in or
+    /// declared by the project. The slug itself is project-specific free text
+    /// and is deliberately not recorded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub type_kind: Option<&'static str>,
 }
 
 impl Event {
-    /// Build an event from a parsed CLI, raw argv, exit code, and elapsed time.
-    pub fn capture(cli: &Cli, raw_argv: &[String], exit_code: i32, elapsed: Duration) -> Self {
+    /// Build an event from a parsed CLI, raw argv, what the command did, and
+    /// elapsed time.
+    pub fn capture(cli: &Cli, raw_argv: &[String], outcome: &Outcome, elapsed: Duration) -> Self {
         let command = cli.command.name();
         let (agent, agent_source) = detect_agent();
         Self {
@@ -62,11 +75,13 @@ impl Event {
             version: env!("CARGO_PKG_VERSION"),
             command: Some(command),
             args: redact_args(raw_argv, Some(command)),
-            exit_code,
+            exit_code: outcome.exit,
             duration_ms: elapsed.as_millis(),
             agent,
             agent_source,
             tty: std::io::stdout().is_terminal(),
+            codes: outcome.codes.iter().map(|code| code.to_string()).collect(),
+            type_kind: outcome.type_kind.map(Origin::name),
         }
     }
 }
@@ -402,6 +417,8 @@ mod tests {
             agent: Some("claude-code"),
             agent_source: Some("env:CLAUDECODE".to_owned()),
             tty: false,
+            codes: Vec::new(),
+            type_kind: None,
         };
         let json: serde_json::Value =
             serde_json::from_slice(&serde_json::to_vec(&event).unwrap()).unwrap();
@@ -449,6 +466,8 @@ mod tests {
             agent: None,
             agent_source: None,
             tty: false,
+            codes: Vec::new(),
+            type_kind: None,
         };
 
         // Quiet first call: writes event, suppresses notice and sentinel.

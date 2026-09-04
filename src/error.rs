@@ -48,6 +48,28 @@ pub enum ArkoudaError {
         concept_type: String,
     },
 
+    /// `arkouda section` was asked for a concept's primary section, but the
+    /// concept's type names none.
+    #[error(
+        "Concept '{id}' has type '{slug}', which names no primary section; name the section \
+         explicitly, or add `primary_section` to its `[[types]]` table"
+    )]
+    NoPrimarySection {
+        /// Concept id.
+        id: String,
+        /// The type's CLI slug.
+        slug: String,
+    },
+
+    /// `--type` named a slug no configured type uses.
+    #[error("No concept type '{slug}'; this project's types are: {known}")]
+    UnknownType {
+        /// The slug that was asked for.
+        slug: String,
+        /// The slugs that do resolve.
+        known: String,
+    },
+
     /// `arkouda new --status` named a value outside the chosen type's
     /// vocabulary.
     #[error("Invalid status '{status}' for type '{concept_type}'; use one of: {valid}")]

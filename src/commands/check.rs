@@ -1,7 +1,7 @@
 //! Validate an OKF bundle of concepts.
 
 use crate::cli::Cli;
-use crate::commands::DiscoveredBundle;
+use crate::commands::{DiscoveredBundle, Outcome};
 use crate::concept::discovery::{self, ReservedKind};
 use crate::concept::{Diagnostic, DiagnosticCode, Manifest, ValidationResult, index, validator};
 use crate::error::Result;
@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 type Report = Vec<(String, ValidationResult)>;
 
 /// Run the check command.
-pub fn run(cli: &Cli) -> Result<i32> {
+pub fn run(cli: &Cli) -> Result<Outcome> {
     let dirs = super::search_dirs(cli)?;
     let bundles = super::discover_bundles(&dirs)?;
 
@@ -21,7 +21,27 @@ pub fn run(cli: &Cli) -> Result<i32> {
     print_report(&report, concept_count, cli.quiet);
 
     let total_errors: usize = report.iter().map(|(_, result)| result.errors.len()).sum();
-    Ok(if total_errors > 0 { 1 } else { 0 })
+    Ok(Outcome {
+        exit: i32::from(total_errors > 0),
+        codes: reported_codes(&report),
+        type_kind: None,
+    })
+}
+
+/// Every diagnostic code this run produced, sorted and deduplicated.
+///
+/// Recorded in telemetry because an exit code says only that something failed.
+/// Which rules actually fire is the evidence a future change to the tiers or
+/// to a built-in contract has to be made on.
+fn reported_codes(report: &Report) -> Vec<DiagnosticCode> {
+    let mut codes: Vec<DiagnosticCode> = report
+        .iter()
+        .flat_map(|(_, result)| result.errors.iter().chain(result.warnings.iter()))
+        .map(|diagnostic| diagnostic.code)
+        .collect();
+    codes.sort_unstable();
+    codes.dedup();
+    codes
 }
 
 /// Validate every discovered bundle, returning a per-file report and the

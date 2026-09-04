@@ -1,18 +1,28 @@
 //! Concept validation.
 //!
-//! Two layers stack here. OKF conformance (§9) is the floor: every concept
-//! parses, and every concept declares a non-empty `type`. On top of that
-//! arkouda enforces its own contract — a `type` it knows, a `status` from that
-//! type's vocabulary, an ISO 8601 `timestamp`, and that type's body sections —
-//! because a bundle is more useful when its concepts are uniform.
+//! Three tiers stack here, and which of them a concept is judged by depends on
+//! whether its `type` resolves to a configured [`ConceptType`]:
 //!
-//! The required frontmatter keys are the same for every type; everything else
-//! is read off the concept's [`ConceptType`] descriptor, so a document is
-//! judged against the contract it declares rather than against the ADR's.
+//! | Tier | Codes | Applies to |
+//! | --- | --- | --- |
+//! | OKF conformance | `E000`, `E004`, `E007`, `E010`, `E011`, `E012` | every concept, always |
+//! | arkouda profile | `E001`, `E002`, `E006`, `E008` | concepts whose `type` resolves |
+//! | template contract | `E003`, `E009` | that type's vocabulary and sections |
 //!
-//! OKF's permissive-consumption rule (§9) shapes what is a warning rather than
-//! an error: an unknown declared OKF version, a stale `index.md`, and a
-//! concept reference that does not resolve never fail a bundle.
+//! The tiers are what let arkouda be strict about the format it implements and
+//! permissive about the contracts a project has chosen not to write down. A
+//! concept declaring a type no `[[types]]` table configures is validated at the
+//! OKF tier and warned about (`E005`) — not skipped, and not a failure. Since
+//! types are user-definable, an unrecognized `type` is ordinarily one the
+//! operator has not declared rather than a mistake, and failing on it would
+//! make `arkouda check` reject conformant OKF bundles. See the ADR
+//! `support-user-defined-concept-types`.
+//!
+//! `E013`, `E014`, and `E015` sit outside the tiers: they are bundle- and
+//! reference-level warnings that apply whatever a concept's type. OKF's
+//! permissive-consumption rule (§9) is why they warn rather than fail — an
+//! unknown declared OKF version, a stale `index.md`, and a concept reference
+//! that does not resolve never fail a bundle.
 
 use crate::concept::manifest::{ManifestError, split_content};
 use crate::concept::types::{self, ConceptType};
@@ -79,7 +89,7 @@ impl Diagnostic {
 }
 
 /// Diagnostic codes for validation issues.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DiagnosticCode {
     /// Concept could not be parsed.
     E000,
@@ -91,7 +101,7 @@ pub enum DiagnosticCode {
     E003,
     /// Concept id is not a lowercase slug.
     E004,
-    /// Frontmatter `type` is not a concept type arkouda knows.
+    /// Frontmatter `type` is not a configured concept type. Warning.
     E005,
     /// Timestamp is not a valid ISO 8601 date or datetime.
     E006,
@@ -132,76 +142,118 @@ pub fn validate_collection(manifests: &[Manifest]) -> Vec<ValidationResult> {
     results
 }
 
-/// Validate one parsed concept against the type its frontmatter declares.
+/// Validate one parsed concept, at whichever tiers its `type` unlocks.
 pub fn validate(manifest: &Manifest) -> ValidationResult {
     let mut result = ValidationResult::default();
 
+    // Tier 1 — OKF conformance. True of every concept in a bundle, whatever
+    // it declares itself to be.
+    check_concept_id(manifest, &mut result);
+    check_title_heading_present(manifest, &mut result);
+
+    let declared = non_empty(manifest.frontmatter.concept_type.as_deref());
+    let Some(declared) = declared else {
+        // `type` is the one key OKF itself requires, so its absence is an
+        // error even though nothing else in the profile applies.
+        check_required_field(
+            &mut result,
+            "type",
+            manifest.frontmatter.concept_type.as_deref(),
+            &format!(
+                "Add `type:` to the YAML frontmatter. It selects the contract this \
+                 concept is checked against; this project knows {}.",
+                types::okf_type_list()
+            ),
+        );
+        return result;
+    };
+
+    let Some(concept_type) = types::by_okf_type(declared) else {
+        result.warnings.push(
+            Diagnostic::new(
+                DiagnosticCode::E005,
+                format!("no configured concept type declares `type: {declared}`"),
+            )
+            .with_hint(format!(
+                "Checked for OKF conformance only. Configured types are: {}. Add a `[[types]]` \
+                 table to .arkoudarc.toml to have arkouda check this concept's status and \
+                 sections too.",
+                types::okf_type_list()
+            )),
+        );
+        return result;
+    };
+
+    // Tier 2 — arkouda's profile. Layered on top of OKF, which requires none
+    // of these, and applied only where a contract says what they mean.
+    check_profile_fields(manifest, concept_type, &mut result);
+    check_timestamp(manifest, &mut result);
+    check_title_heading_matches(manifest, &mut result);
+
+    // Tier 3 — the type's own contract.
+    check_status_vocabulary(manifest, concept_type, &mut result);
+    check_required_sections(manifest, concept_type, &mut result);
+
+    result
+}
+
+/// The frontmatter keys arkouda's profile requires beyond OKF's `type`.
+fn check_profile_fields(
+    manifest: &Manifest,
+    concept_type: &ConceptType,
+    result: &mut ValidationResult,
+) {
     check_required_field(
-        &mut result,
-        "type",
-        manifest.frontmatter.concept_type.as_deref(),
-        &format!(
-            "Add `type:` to the YAML frontmatter. It selects the contract this \
-             concept is checked against; arkouda knows {}.",
-            types::okf_type_list()
-        ),
-    );
-    check_required_field(
-        &mut result,
+        result,
         "title",
         manifest.frontmatter.title.as_deref(),
         "Add a human-readable `title` to the YAML frontmatter.",
     );
     check_required_field(
-        &mut result,
+        result,
         "description",
         manifest.frontmatter.description.as_deref(),
         "Add a `description` summarizing the concept itself (what was decided, or \
          what is being built — not just the topic) in one sentence.",
     );
     check_required_field(
-        &mut result,
+        result,
         "status",
         manifest.frontmatter.status.as_deref(),
-        &match manifest.concept_type() {
-            Some(concept_type) => format!(
-                "Add `status: {}` or another value from: {}.",
-                concept_type.default_status().name,
-                concept_type.status_list()
-            ),
-            None => "Add a `status` from the vocabulary of this concept's `type`.".to_owned(),
-        },
+        &format!(
+            "Add `status: {}` or another value from: {}.",
+            concept_type.default_status().name,
+            concept_type.status_list()
+        ),
     );
     check_required_field(
-        &mut result,
+        result,
         "timestamp",
         manifest.frontmatter.timestamp.as_deref(),
         "Add `timestamp: YYYY-MM-DD` to the YAML frontmatter.",
     );
+}
 
-    let declared = non_empty(manifest.frontmatter.concept_type.as_deref());
-    let concept_type = declared.and_then(types::by_okf_type);
-
-    if let Some(declared) = declared
-        && concept_type.is_none()
+fn check_timestamp(manifest: &Manifest, result: &mut ValidationResult) {
+    if let Some(timestamp) = non_empty(manifest.frontmatter.timestamp.as_deref())
+        && !is_iso8601(timestamp)
     {
         result.errors.push(
             Diagnostic::new(
-                DiagnosticCode::E005,
-                format!("frontmatter `type` is `{declared}`, which arkouda does not know"),
+                DiagnosticCode::E006,
+                format!("timestamp `{timestamp}` is not a valid ISO 8601 date or datetime"),
             )
-            .with_hint(format!(
-                "Use one of: {}. Silently skipping a document arkouda cannot check \
-                 would hide exactly the drift `check` exists to catch.",
-                types::okf_type_list()
-            )),
+            .with_hint("Use `2026-05-06` or `2026-05-06T14:30:00Z`."),
         );
     }
+}
 
-    check_concept_id(manifest, &mut result);
-
+fn check_status_vocabulary(
+    manifest: &Manifest,
+    concept_type: &ConceptType,
+    result: &mut ValidationResult,
+) {
     if let Some(status) = non_empty(manifest.frontmatter.status.as_deref())
-        && let Some(concept_type) = concept_type
         && concept_type.status(status).is_none()
     {
         result.errors.push(
@@ -215,29 +267,6 @@ pub fn validate(manifest: &Manifest) -> ValidationResult {
             .with_hint(format!("Use one of: {}.", concept_type.status_list())),
         );
     }
-
-    if let Some(timestamp) = non_empty(manifest.frontmatter.timestamp.as_deref())
-        && !is_iso8601(timestamp)
-    {
-        result.errors.push(
-            Diagnostic::new(
-                DiagnosticCode::E006,
-                format!("timestamp `{timestamp}` is not a valid ISO 8601 date or datetime"),
-            )
-            .with_hint("Use `2026-05-06` or `2026-05-06T14:30:00Z`."),
-        );
-    }
-
-    check_title_heading(manifest, &mut result);
-
-    // Without a type there is no section contract to check against, and
-    // borrowing another type's would be the assumption this design removes.
-    // The missing or unknown `type` is already reported, as E001 or E005.
-    if let Some(concept_type) = concept_type {
-        check_required_sections(manifest, concept_type, &mut result);
-    }
-
-    result
 }
 
 /// Validate an `index.md` (OKF §6, §11). Frontmatter is permitted only in a
@@ -437,21 +466,38 @@ fn check_required_field(
     }
 }
 
-fn check_title_heading(manifest: &Manifest, result: &mut ValidationResult) {
+/// A concept document is a Markdown document with a title (OKF §3.2), so a
+/// missing `#` heading is an OKF-tier error regardless of type.
+fn check_title_heading_present(manifest: &Manifest, result: &mut ValidationResult) {
+    if markdown::headings(&manifest.body)
+        .iter()
+        .any(|heading| heading.level == markdown::TITLE_LEVEL)
+    {
+        return;
+    }
+
+    let hint = match non_empty(manifest.frontmatter.title.as_deref()) {
+        Some(title) => format!("Add `# {title}` after the frontmatter."),
+        None => "Add a `# <title>` heading after the frontmatter.".to_owned(),
+    };
+    result.errors.push(
+        Diagnostic::new(DiagnosticCode::E007, "missing top-level Markdown heading").with_hint(hint),
+    );
+}
+
+/// That the heading agrees with the frontmatter `title` is arkouda's profile,
+/// not OKF's: OKF requires neither key.
+fn check_title_heading_matches(manifest: &Manifest, result: &mut ValidationResult) {
     let Some(title) = non_empty(manifest.frontmatter.title.as_deref()) else {
         return;
     };
 
     let headings = markdown::headings(&manifest.body);
-    let h1 = headings
+    let Some(h1) = headings
         .iter()
-        .find(|heading| heading.level == markdown::TITLE_LEVEL);
-
-    let Some(h1) = h1 else {
-        result.errors.push(
-            Diagnostic::new(DiagnosticCode::E007, "missing top-level Markdown heading")
-                .with_hint(format!("Add `# {title}` after the frontmatter.")),
-        );
+        .find(|heading| heading.level == markdown::TITLE_LEVEL)
+    else {
+        // Already reported at the OKF tier.
         return;
     };
 
@@ -476,13 +522,17 @@ fn check_required_sections(
     concept_type: &ConceptType,
     result: &mut ValidationResult,
 ) {
+    if concept_type.required_sections.is_empty() {
+        return;
+    }
+
     let sections: HashSet<String> = markdown::headings(&manifest.body)
         .into_iter()
         .filter(|heading| heading.level == markdown::SECTION_LEVEL)
         .map(|heading| heading.text.to_ascii_lowercase())
         .collect();
 
-    for required in concept_type.required_sections {
+    for required in &concept_type.required_sections {
         if !sections.contains(&required.to_ascii_lowercase()) {
             result.errors.push(
                 Diagnostic::new(
@@ -725,16 +775,64 @@ An ADR template looks like this:
     }
 
     #[test]
-    fn rejects_a_type_arkouda_does_not_know() {
+    fn an_unconfigured_type_warns_and_stops_at_the_okf_tier() {
         let content = good_adr().replace("Architecture Decision Record", "BigQuery Table");
         let manifest = parse("docs/adr/basic-adr-cli.md", &content);
         let result = validate(&manifest);
+
         assert_eq!(
-            codes(&result),
+            warning_codes(&result),
             [DiagnosticCode::E005],
-            "an unknown type is an error, and there is no section contract to \
-             check it against: {result:#?}"
+            "an unconfigured type is reported, not silently skipped: {result:#?}"
         );
+        assert!(
+            result.errors.is_empty(),
+            "a conformant OKF concept must not fail a bundle just because no \
+             `[[types]]` table describes it: {:#?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn an_unconfigured_type_is_still_checked_for_okf_conformance() {
+        // The concept is not skipped: its id and its `#` heading are OKF's
+        // business whatever the document claims to be.
+        let content = good_adr()
+            .replace("Architecture Decision Record", "BigQuery Table")
+            .replace("# Basic ADR CLI\n", "");
+        let manifest = parse("docs/adr/Basic_CLI.md", &content);
+        let result = validate(&manifest);
+
+        assert!(
+            codes(&result).contains(&DiagnosticCode::E007),
+            "a missing title heading is OKF-tier: {result:#?}"
+        );
+        assert!(
+            codes(&result).contains(&DiagnosticCode::E004),
+            "a non-slug concept id is OKF-tier: {result:#?}"
+        );
+    }
+
+    #[test]
+    fn a_missing_type_is_still_an_error() {
+        // `type` is the one key OKF itself requires, so its absence is not the
+        // same as declaring a type nothing configures.
+        let content = good_adr().replace("type: Architecture Decision Record\n", "");
+        let manifest = parse("docs/adr/basic-adr-cli.md", &content);
+        assert!(codes(&validate(&manifest)).contains(&DiagnosticCode::E001));
+    }
+
+    #[test]
+    fn the_profile_and_template_tiers_are_skipped_for_an_unconfigured_type() {
+        // Everything arkouda layers on top of OKF — its required frontmatter,
+        // a status vocabulary, a section set — presupposes a contract. A
+        // concept with none must not be judged against another type's.
+        let content = "---\ntype: Runbook\n---\n\n# Restart the queue\n\n## Steps\n\nDo it.\n";
+        let manifest = parse("docs/ops/restart-the-queue.md", content);
+        let result = validate(&manifest);
+
+        assert!(result.errors.is_empty(), "{:#?}", result.errors);
+        assert_eq!(warning_codes(&result), [DiagnosticCode::E005]);
     }
 
     #[test]

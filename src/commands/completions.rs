@@ -1,13 +1,14 @@
 //! Generate shell completions.
 
 use crate::cli::{Cli, CompletionsArgs, Shell};
+use crate::commands::Outcome;
 use crate::error::Result;
 use clap::CommandFactory;
 use clap_complete::{Shell as ClapShell, generate};
 use std::io;
 
 /// Run the completions command.
-pub fn run(args: &CompletionsArgs) -> Result<i32> {
+pub fn run(args: &CompletionsArgs) -> Result<Outcome> {
     let mut cmd = Cli::command();
     let shell = match args.shell {
         Shell::Bash => ClapShell::Bash,
@@ -18,5 +19,5 @@ pub fn run(args: &CompletionsArgs) -> Result<i32> {
     };
 
     generate(shell, &mut cmd, "arkouda", &mut io::stdout());
-    Ok(0)
+    Ok(Outcome::from(0))
 }
