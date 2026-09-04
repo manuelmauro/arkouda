@@ -83,9 +83,10 @@ pub(crate) fn resolve_type(slug: &str) -> Result<&'static ConceptType> {
 /// `discover-bundles`), which is what keeps "check one bundle in CI" working
 /// now that nothing configures roots.
 fn discovery_root(cli: &Cli) -> PathBuf {
-    cli.dir.as_deref().map(Path::to_path_buf).unwrap_or_else(|| {
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-    })
+    cli.dir
+        .as_deref()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
 /// The bundles `list`, `check`, `section`, and `index` read.

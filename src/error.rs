@@ -105,7 +105,6 @@ pub enum ArkoudaError {
         path: String,
     },
 
-
     /// An operation that rewrites the bundle was asked to run against a single
     /// concept file rather than the bundle root.
     #[error(

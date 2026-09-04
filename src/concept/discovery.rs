@@ -305,7 +305,10 @@ mod tests {
     fn markdown_without_a_type_does_not_make_a_bundle() {
         let root = temp_bundle("plain-markdown");
         write(&root.join("README.md"), "# Just prose\n");
-        write(&root.join("notes/thoughts.md"), "---\ntitle: no type\n---\n");
+        write(
+            &root.join("notes/thoughts.md"),
+            "---\ntitle: no type\n---\n",
+        );
         write(&root.join("docs/adr/a.md"), CONCEPT);
 
         assert_eq!(
@@ -349,7 +352,10 @@ mod tests {
         let file = root.join("docs/adr/a.md");
         write(&file, CONCEPT);
 
-        assert_eq!(find_bundles(&file).expect("walk"), vec![root.join("docs/adr")]);
+        assert_eq!(
+            find_bundles(&file).expect("walk"),
+            vec![root.join("docs/adr")]
+        );
         std::fs::remove_dir_all(&root).expect("cleanup");
     }
 

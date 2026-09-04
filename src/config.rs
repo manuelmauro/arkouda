@@ -462,7 +462,10 @@ mod tests {
         ] {
             let error = validate(text).expect_err("a dirs key must be rejected");
             assert!(error.contains("`dirs` is no longer a setting"), "{error}");
-            assert!(error.contains("--dir"), "the message must name the replacement: {error}");
+            assert!(
+                error.contains("--dir"),
+                "the message must name the replacement: {error}"
+            );
         }
     }
 
@@ -480,7 +483,6 @@ mod tests {
     fn malformed_toml_is_an_error() {
         assert!(validate("this is not toml\n").is_err());
     }
-
 
     #[test]
     fn declared_types_extend_the_builtins() {
