@@ -61,6 +61,14 @@ pub enum ArkoudaError {
         slug: String,
     },
 
+    /// The concept type registry was installed twice in one process. A
+    /// programming error in an embedding, not a user mistake — but reporting
+    /// it beats running on types the caller did not configure.
+    #[error(
+        "The concept type registry is already installed; declared `[[types]]` were not applied"
+    )]
+    RegistryAlreadyInstalled,
+
     /// `--type` named a slug no configured type uses.
     #[error("No concept type '{slug}'; this project's types are: {known}")]
     UnknownType {

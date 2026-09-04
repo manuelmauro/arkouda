@@ -240,20 +240,45 @@ fn state_dir() -> Option<PathBuf> {
     }
 }
 
+/// The one flag whose value may be a project's own vocabulary rather than
+/// arkouda's.
+const TYPE_FLAG: &str = "--type";
+
 /// Redact argv tokens so values that look like paths or free-text titles
 /// become opaque markers. Flag names and short slug/enum values pass
 /// through unchanged.
 pub(crate) fn redact_args(raw_args: &[String], command_name: Option<&str>) -> Vec<String> {
     let mut out = Vec::with_capacity(raw_args.len());
     let mut subcmd_skipped = command_name.is_none();
+    let mut after_type_flag = false;
+
     for token in raw_args {
         if !subcmd_skipped && Some(token.as_str()) == command_name {
             subcmd_skipped = true;
             continue;
         }
-        out.push(redact_token(token));
+        out.push(if after_type_flag {
+            redact_type_value(token)
+        } else {
+            redact_token(token)
+        });
+        after_type_flag = token == TYPE_FLAG;
     }
     out
+}
+
+/// A `--type` value, kept only when it names a built-in.
+///
+/// `adr` and `prd` are arkouda's own vocabulary, and recording which one an
+/// agent reached for is the whole point of keeping argv. A project's declared
+/// slug is free text it chose — as identifying as a title — so it becomes a
+/// marker. The marker still says the type was a custom one, which is the part
+/// worth knowing.
+fn redact_type_value(value: &str) -> String {
+    match crate::concept::types::by_slug(value) {
+        Some(concept_type) if concept_type.origin == Origin::Builtin => value.to_owned(),
+        _ => "<type>".to_owned(),
+    }
 }
 
 pub(crate) fn redact_token(token: &str) -> String {
@@ -263,6 +288,9 @@ pub(crate) fn redact_token(token: &str) -> String {
     if token.starts_with('-')
         && let Some((flag, value)) = token.split_once('=')
     {
+        if flag == TYPE_FLAG {
+            return format!("{flag}={}", redact_type_value(value));
+        }
         return format!("{flag}={}", redact_value(value));
     }
     if token.starts_with('-') {
@@ -312,6 +340,29 @@ impl Command {
 mod tests {
     use super::*;
     use clap::Parser;
+
+    #[test]
+    fn a_projects_own_type_slug_is_redacted() {
+        // `adr` and `prd` are arkouda's vocabulary and are the point of
+        // recording argv. `rfc` is whatever this project called its own type,
+        // which is free text like a title.
+        let redact = |args: &[&str]| {
+            redact_args(
+                &args.iter().map(|a| (*a).to_owned()).collect::<Vec<_>>(),
+                Some("new"),
+            )
+        };
+
+        assert_eq!(redact(&["new", "--type", "adr"]), ["--type", "adr"]);
+        assert_eq!(redact(&["new", "--type", "rfc"]), ["--type", "<type>"]);
+        assert_eq!(redact(&["new", "--type=rfc"]), ["--type=<type>"]);
+        assert_eq!(redact(&["new", "--type=prd"]), ["--type=prd"]);
+        assert_eq!(
+            redact(&["new", "--status", "draft"]),
+            ["--status", "draft"],
+            "only --type carries a project's own vocabulary"
+        );
+    }
 
     fn command_of(argv: &[&str]) -> Command {
         Cli::parse_from(argv).command

@@ -124,7 +124,7 @@ This also gives _a concept whose type is no longer declared_ a sane answer. Dele
 
 `--type` loses its `PossibleValuesParser` and is parsed as a free `String`. After the config is loaded and the registry built, the value is resolved against it, and an unresolvable one is an error naming the slugs actually configured for this project. Startup order becomes: parse argv → discover config → build registry → resolve `dirs` → validate `--type` → run.
 
-`new --type` keeps `adr` as its default when the built-in is present, and requires an explicit `--type` when a project has shadowed or omitted it.
+`new --type` keeps `adr` as its default. Shadowing the built-in ADR under the same slug leaves that default working — `arkouda new` then scaffolds the project's contract rather than Nygard's, which is the point of shadowing. The default fails only when no configured type uses the slug `adr` at all, which happens when a declared type takes over `Architecture Decision Record` under a different slug; `--type` must then be explicit, and the error names the slugs that do exist.
 
 The parsed registry is `Box::leak`ed once at startup so the `&'static ConceptType` signatures threaded through `Dirs`, `list`, `check`, `new`, `index`, and `section` survive unchanged. A single process-lifetime allocation in a short-lived CLI is the cheaper trade against converting the descriptor to owned data and plumbing a `&Registry` through every command. Shell completions for `--status` and `--type` remain unable to offer values, as they already are since `--status` stopped being a `ValueEnum`.
 

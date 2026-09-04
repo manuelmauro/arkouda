@@ -267,13 +267,22 @@ pub fn builtins() -> Vec<ConceptType> {
 
 static REGISTRY: OnceLock<&'static [ConceptType]> = OnceLock::new();
 
-/// Install the registry for this process. The first call wins; later calls
-/// are ignored, so a command that resolves configuration twice cannot change
-/// the types out from under concepts already validated.
-pub fn install(types: Vec<ConceptType>) -> &'static [ConceptType] {
+/// The built-ins, leaked on first use. Deliberately a separate cell from
+/// [`REGISTRY`]: reading [`all`] before a registry is installed must not
+/// install one, or a caller that happens to look at the types first would
+/// silently pin the built-ins and make the project's `[[types]]` disappear.
+static FALLBACK: OnceLock<&'static [ConceptType]> = OnceLock::new();
+
+/// Install the registry for this process.
+///
+/// Returns `false` when one is already installed, in which case the existing
+/// registry stands and the caller should treat it as the error it is. Reading
+/// [`all`] first does not count as installing, so a `false` here means
+/// `install` was genuinely called twice.
+#[must_use]
+pub fn install(types: Vec<ConceptType>) -> bool {
     let leaked: &'static [ConceptType] = Box::leak(types.into_boxed_slice());
-    let _ = REGISTRY.set(leaked);
-    all()
+    REGISTRY.set(leaked).is_ok()
 }
 
 /// Every concept type this invocation knows, in presentation order.
@@ -281,7 +290,10 @@ pub fn install(types: Vec<ConceptType>) -> &'static [ConceptType] {
 /// Falls back to the built-ins when nothing has been installed, so library
 /// callers and unit tests see the shipped types without resolving a config.
 pub fn all() -> &'static [ConceptType] {
-    REGISTRY.get_or_init(|| Box::leak(builtins().into_boxed_slice()))
+    REGISTRY
+        .get()
+        .copied()
+        .unwrap_or_else(|| *FALLBACK.get_or_init(|| Box::leak(builtins().into_boxed_slice())))
 }
 
 /// Resolve a type by its CLI slug.
@@ -360,6 +372,19 @@ mod tests {
             Some("In Review")
         );
         assert_eq!(adr().status("shipped"), None, "vocabularies are per type");
+    }
+
+    #[test]
+    fn reading_the_registry_does_not_install_one() {
+        // `all()` falls back to the built-ins without touching REGISTRY, so a
+        // caller that looks at the types before resolving a config does not
+        // silently lock the project's `[[types]]` out. The fallback and the
+        // registry are separate cells precisely so this holds.
+        assert!(!all().is_empty());
+        assert!(
+            REGISTRY.get().is_none(),
+            "reading the registry must leave it uninstalled"
+        );
     }
 
     #[test]

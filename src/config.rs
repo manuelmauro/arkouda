@@ -234,7 +234,9 @@ pub fn install_types(start: &Path) -> Result<()> {
         }
     };
 
-    types::install(registry);
+    if !types::install(registry) {
+        return Err(ArkoudaError::RegistryAlreadyInstalled);
+    }
     Ok(())
 }
 
@@ -269,11 +271,20 @@ fn build_registry(
         }
         declared.push((concept_type.slug.clone(), concept_type.okf_type.clone()));
 
-        let shadowed = registry.iter().position(|existing| {
+        // One table can match two different built-ins at once — a `slug` of
+        // `prd` with the ADR's `okf_type`, say. Every match has to go, or the
+        // survivor keeps a slug the declared type has also claimed, and
+        // `by_slug`, `slugs`, and `ConceptType::eq` all stop identifying one
+        // type. The declared type takes the first match's place so registry
+        // order, and so `index.md` heading order, stays put.
+        let shadows = |existing: &ConceptType| {
             existing.slug == concept_type.slug || existing.okf_type == concept_type.okf_type
-        });
-        match shadowed {
-            Some(index) => registry[index] = concept_type,
+        };
+        match registry.iter().position(&shadows) {
+            Some(index) => {
+                registry.retain(|existing| !shadows(existing));
+                registry.insert(index, concept_type);
+            }
             None => registry.push(concept_type),
         }
     }
@@ -732,6 +743,29 @@ mod tests {
 
         let slugs: Vec<&str> = registry.iter().map(|t| t.slug.as_str()).collect();
         assert_eq!(slugs, ["decision", "prd"]);
+    }
+
+    #[test]
+    fn one_table_may_shadow_two_built_ins_at_once() {
+        // `slug` matches the built-in PRD while `okf_type` matches the
+        // built-in ADR. Replacing only the first match would leave the built-in
+        // PRD behind, and the registry would hold two types with slug `prd` —
+        // breaking the uniqueness `by_slug`, `slugs`, and `ConceptType::eq`
+        // all rely on.
+        let registry = registry(
+            "[[types]]\n\
+             slug = \"prd\"\n\
+             okf_type = \"Architecture Decision Record\"\n\
+             statuses = [\"open\"]\n\
+             default_dir = \"docs/prd\"\n",
+        )
+        .expect("valid");
+
+        let slugs: Vec<&str> = registry.iter().map(|t| t.slug.as_str()).collect();
+        assert_eq!(slugs, ["prd"], "both shadowed built-ins are gone");
+
+        let okf_types: Vec<&str> = registry.iter().map(|t| t.okf_type.as_str()).collect();
+        assert_eq!(okf_types, ["Architecture Decision Record"]);
     }
 
     #[test]

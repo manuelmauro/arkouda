@@ -1,5 +1,6 @@
 ---
 name: use-arkouda
+version: 0.6.0
 description: Find prior decisions and product requirements, and record new ones, in a repo's arkouda collection of ADRs (Architecture Decision Records) and PRDs (Product Requirements Documents). Invoke any time you're about to make a non-trivial design, architecture, library, schema, or convention decision, or about to build a feature — check what was already decided and what is already required before deciding, and capture the outcome afterwards.
 license: MIT
 ---
@@ -34,9 +35,13 @@ The two are linked from the PRD side: a PRD's `decisions` frontmatter key lists 
 **A project can declare its own types with `[[types]]` in `.arkoudarc.toml`, and it can replace the built-in ADR or PRD contract with its own.** So the two tables above describe arkouda's defaults, not necessarily *this* repo. Before you scaffold anything in an unfamiliar repo:
 
 ```sh
-arkouda --help                    # nothing about types here — it is per project
-cat .arkoudarc.toml 2>/dev/null   # the authoritative list of this repo's types
-arkouda list -l                   # the type column shows what is actually in use
+arkouda --help     # nothing about types here — the type set is per project
+arkouda list -l    # the type column shows which types are actually in use
+
+# `.arkoudarc.toml` is discovered by walking *up* from the working directory,
+# so reading only `./.arkoudarc.toml` misses the config from a nested dir.
+d=$PWD; until [ -f "$d/.arkoudarc.toml" ] || [ "$d" = / ]; do d=$(dirname "$d"); done
+cat "$d/.arkoudarc.toml" 2>/dev/null   # the authoritative list of this repo's types
 ```
 
 A `[[types]]` table gives its type a `slug` (what `--type` takes), an `okf_type` (what its documents declare), a status lifecycle, optionally `required_sections` and a `primary_section`, a `default_dir`, and optionally a `template`. Read the table and follow it exactly as you would the built-in contracts — `arkouda new --type <slug>` scaffolds from it, and `arkouda check` enforces it.
@@ -98,7 +103,7 @@ Five subcommands, each doing something the shell can't:
 - **`arkouda list [--sort id|timestamp|status] [--type <slug>] [-l]`** — one path per line. Pipe straight into `xargs`/`rg`/`cat`/`wc`. With `-l`, a headerless `ID TYPE STATUS TIMESTAMP PATH TITLE — DESCRIPTION` table for human skimming and for `awk`. `--type` filters by frontmatter type; valid slugs are this project's, not a fixed `adr|prd`.
 - **`arkouda section <id> [<name>]`** — body of that concept's primary section (`Decision` for an ADR, `Requirements` for a PRD). Give a `<name>` for any other heading (`context`, `consequences`, `problem`, `non-goals`, `success metrics`, `status`, or custom). Errors if the section is missing. For the full file, resolve the path through `arkouda list` and `cat` it.
 - **`arkouda check`** — validates in three tiers: OKF conformance for every concept, arkouda's frontmatter profile for concepts whose `type` the project configures, and that type's status vocabulary and required sections. Exit 0 clean, 1 on any error. Each diagnostic carries a code (E000–E015) and a fix hint. Warnings never fail the run. A concept whose `type` no `[[types]]` table configures is checked for OKF conformance only and warned about (`E005`) — it is neither skipped nor a failure.
-- **`arkouda new "<title>" [--type <slug>] [--id <slug>] [--status <value>] [--description "<one-line summary>"]`** — scaffold a new concept with today's date, from that type's template. Defaults to `--type adr`, which a project that replaces or omits the built-in ADR will reject — read `.arkoudarc.toml` first. `--status` must come from the chosen type's vocabulary and defaults to the first of its lifecycle (`proposed` for an ADR, `draft` for a PRD). Default id is a slug from the title. The description should summarize *what was decided* or *what is being built*, not just the topic. Refreshes `index.md` if the bundle has one.
+- **`arkouda new "<title>" [--type <slug>] [--id <slug>] [--status <value>] [--description "<one-line summary>"]`** — scaffold a new concept with today's date, from that type's template. Defaults to `--type adr`. That default keeps working when a project redefines the `adr` slug — you get its contract instead of the built-in one — and fails only when the project has no `adr` slug at all, in which case the error names the slugs it does have. `--status` must come from the chosen type's vocabulary and defaults to the first of its lifecycle (`proposed` for an ADR, `draft` for a PRD). Default id is a slug from the title. The description should summarize *what was decided* or *what is being built*, not just the topic. Refreshes `index.md` if the bundle has one.
 - **`arkouda index`** — regenerate each bundle's `index.md`, an OKF §6 listing of every concept under `# <Type>` then `## <Status>`. Read it to see the whole collection at a glance without opening any file.
 
 Global flags: `--dir <path>` (also `ADR_DIR`), `-q/--quiet`. Run `arkouda --help` or `arkouda <subcommand> --help` for the authoritative surface.
@@ -325,4 +330,4 @@ Each diagnostic has a code; the hint usually tells you the exact fix.
 - Don't add an `id:` key to frontmatter; it was removed when arkouda moved to OKF. The concept id comes from the path within the bundle.
 - Don't hand-edit `index.md` — it is generated by `arkouda index`, and edits are overwritten. `log.md` is yours to maintain: arkouda never writes it, only validates that its headings are `## YYYY-MM-DD`. Neither file is ever a concept; both are reserved by OKF.
 - Don't commit documents whose `arkouda check` fails — CI is likely to enforce it. Do read the warnings too: an `E005` on a document you just wrote means you gave it a `type` this project doesn't configure, and nothing checked its shape.
-- Don't assume `--type adr` exists. It is the default, but a project may replace or omit the built-in; read `.arkoudarc.toml`, or let `arkouda new --type` tell you what the slugs are.
+- Don't assume `--type adr` means the built-in ADR, or that it exists at all. A project can redefine the `adr` slug with its own sections and statuses, or drop it by giving decisions a different slug. Read the discovered `.arkoudarc.toml`, or let `arkouda new --type <anything>` list the slugs in its error.

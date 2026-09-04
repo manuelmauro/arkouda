@@ -47,5 +47,13 @@ pub fn run(args: &SectionArgs, cli: &Cli) -> Result<Outcome> {
         })?;
     println!("{body}");
 
-    Ok(Outcome::from(0))
+    // The concept's own type is what picked the section, so it is the type
+    // this invocation resolved.
+    Ok(Outcome {
+        exit: 0,
+        codes: Vec::new(),
+        type_kind: manifest
+            .concept_type()
+            .map(|concept_type| concept_type.origin),
+    })
 }
