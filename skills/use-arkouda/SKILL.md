@@ -1,6 +1,6 @@
 ---
 name: use-arkouda
-version: 0.6.0
+version: 0.7.0
 description: Find prior decisions and product requirements, and record new ones, in a repo's arkouda collection of ADRs (Architecture Decision Records) and PRDs (Product Requirements Documents). Invoke any time you're about to make a non-trivial design, architecture, library, schema, or convention decision, or about to build a feature — check what was already decided and what is already required before deciding, and capture the outcome afterwards.
 license: MIT
 ---
@@ -9,7 +9,7 @@ license: MIT
 
 In repositories that record decisions and requirements as Markdown files with YAML frontmatter (conventionally under `docs/adr/` and `docs/prd/`), `arkouda` is the CLI for finding, reading, validating, and scaffolding them. **Before you decide, check what's already been decided. Before you build, check what's already required. After you decide, capture it.**
 
-An arkouda directory is an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) (OKF) v0.1 *knowledge bundle*: each document is a *concept* whose id is its path within the bundle without the `.md` suffix (`security/mtls.md` → `security/mtls`). `index.md` and `log.md` are reserved by OKF and are never concepts.
+An arkouda directory is an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) (OKF) v0.2 *knowledge bundle*: each document is a *concept* whose id is its path within the bundle without the `.md` suffix (`security/mtls.md` → `security/mtls`). `index.md` and `log.md` are reserved by OKF and are never concepts.
 
 If a repo has no such directory yet but the `arkouda` binary is installed, this skill is also the right one to reach for: `arkouda new` enforces the schema from the first file.
 
@@ -303,11 +303,11 @@ Arkouda validates document *structure*, not requirement *content*. It does not e
 Each diagnostic has a code; the hint usually tells you the exact fix.
 
 - **E000** unparseable file → the file must start with YAML frontmatter delimited by `---`.
-- **E001/E002** missing or empty required field → add the field with a real value.
+- **E001/E002** missing or empty required field → add the field with a real value. For a timestamp, that means `generated.at` (or a legacy `timestamp`).
 - **E003** invalid status → use a value from *this type's* vocabulary; the hint lists them.
 - **E004** concept id is not a lowercase slug → rename the file (and any parent dirs) to letters, digits, single hyphens.
 - **E005** *(warning)* no configured type declares this `type` → either the value is a typo (fix it to a configured `okf_type`; the hint lists them), or the project has not declared this type yet. Until it does, the concept is checked for OKF conformance only — its status and sections are not validated. A warning rather than an error because a conformant OKF bundle may legitimately hold types this project has not described.
-- **E006** invalid timestamp → ISO 8601, e.g. `2026-05-06` or `2026-05-06T14:30:00Z`.
+- **E006** invalid instant → ISO 8601. `generated.at`, `verified[].at`, and `stale_after` need an explicit offset (`2026-05-06T14:30:00Z`); a legacy `timestamp` may be a plain date.
 - **E007/E008** missing or wrong H1 → first heading must be `# <title>`.
 - **E009** missing required section → add the named `## Section`. Which ones are required depends on `type`, and a project's own type may require none at all.
 - **E010** duplicate concept id across files → make ids unique.
@@ -316,6 +316,8 @@ Each diagnostic has a code; the hint usually tells you the exact fix.
 - **E013** *(warning)* bundle declares an OKF version arkouda doesn't implement.
 - **E014** *(warning)* `index.md` is stale → run `arkouda index`.
 - **E015** *(warning)* a `decisions` or `superseded_by` entry doesn't resolve to a loaded concept → fix the id, or widen `--dir`/`dirs` if it lives in a bundle this run didn't load. It's a warning precisely because arkouda can't tell a broken reference from an out-of-scope one.
+- **E016** *(warning)* the concept is past its `stale_after` instant → re-check the content and move `stale_after` forward, or drop the key. Worth heeding before you rely on the concept: it says the author expected it to need review by now.
+- **E017** *(warning)* the concept uses v0.1's `timestamp` → replace it with `generated: { by: human:<id>, at: <date>T00:00:00Z }`. Reading the old key still works, so this never fails anything.
 
 ## What not to do
 

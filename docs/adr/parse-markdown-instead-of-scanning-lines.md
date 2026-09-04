@@ -6,7 +6,7 @@ tags:
   - parsing
   - validation
   - dependencies
-timestamp: 2026-08-07
+generated: { by: human:manuelmauro, at: 2026-08-07T00:00:00Z }
 status: proposed
 deciders: []
 ---

@@ -126,7 +126,7 @@ type: Architecture Decision Record
 title: Basic ADR CLI
 description: Navigate ADRs
 status: accepted
-timestamp: 2026-05-06
+generated: { by: human:test, at: 2026-05-06T00:00:00Z }
 ---
 
 # Basic ADR CLI
@@ -201,7 +201,7 @@ type: Architecture Decision Record
 title: X
 description: x
 status: proposed
-timestamp: 2026-05-06
+generated: { by: human:test, at: 2026-05-06T00:00:00Z }
 ---
 
 # X

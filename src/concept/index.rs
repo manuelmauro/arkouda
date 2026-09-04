@@ -1,9 +1,9 @@
-//! Rendering of the OKF §6 `index.md` directory listing.
+//! Rendering of the OKF §8 `index.md` directory listing.
 //!
 //! The index exists for progressive disclosure: it lets a human or an agent
 //! see every concept in the bundle, grouped by type and then by status,
 //! without opening a single document. Bundle-root indexes also declare the OKF
-//! version the bundle targets (OKF §11) — the one place frontmatter is
+//! version the bundle targets (OKF §12) — the one place frontmatter is
 //! permitted in an `index.md`.
 //!
 //! Nesting is uniform: a single-type bundle still pays the type heading, so
@@ -171,7 +171,7 @@ mod tests {
 
         assert_eq!(
             render(&manifests),
-            "---\nokf_version: \"0.1\"\n---\n\
+            "---\nokf_version: \"0.2\"\n---\n\
              \n# Architecture Decision Record\n\
              \n## Proposed\n\n\
              * [Alpha](alpha.md) - First.\n\
@@ -229,6 +229,6 @@ mod tests {
 
     #[test]
     fn an_empty_bundle_still_declares_the_okf_version() {
-        assert_eq!(render(&[]), "---\nokf_version: \"0.1\"\n---\n");
+        assert_eq!(render(&[]), "---\nokf_version: \"0.2\"\n---\n");
     }
 }

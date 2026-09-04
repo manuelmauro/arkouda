@@ -1,4 +1,4 @@
-//! Generate the OKF §6 `index.md` for each configured bundle.
+//! Generate the OKF §8 `index.md` for each configured bundle.
 
 use crate::cli::Cli;
 use crate::commands::Outcome;

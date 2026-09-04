@@ -8,7 +8,7 @@ tags:
   - config
   - validation
   - okf
-timestamp: 2026-09-04
+generated: { by: human:manuelmauro, at: 2026-09-04T00:00:00Z }
 status: accepted
 deciders: []
 ---

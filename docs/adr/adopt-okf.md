@@ -7,7 +7,7 @@ tags:
   - format
   - interoperability
   - adr
-timestamp: 2026-07-10
+generated: { by: human:manuelmauro, at: 2026-07-10T00:00:00Z }
 status: accepted
 deciders: []
 ---

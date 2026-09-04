@@ -1,10 +1,20 @@
 //! OKF concept frontmatter.
 //!
 //! Field names follow the [Open Knowledge Format][okf] §4.1. `type` is the
-//! only field OKF requires; `title`, `description`, `resource`, `tags`, and
-//! `timestamp` are its recommended set. `status`, `deciders`, `superseded_by`,
-//! `owner`, `target_release`, and `decisions` are producer-defined extensions
-//! that carry the metadata OKF leaves open.
+//! only field OKF requires; `title`, `description`, `resource`, and `tags` are
+//! its recommended set. `deciders`, `superseded_by`, `owner`,
+//! `target_release`, and `decisions` are producer-defined extensions that
+//! carry the metadata OKF leaves open.
+//!
+//! OKF v0.2 adds the provenance, trust, and lifecycle families (§5):
+//! `sources`, `generated`, `verified`, and `stale_after`. All are optional —
+//! §11 forbids rejecting a concept for missing any of them — and arkouda
+//! parses them so a v0.2 bundle is understood rather than merely tolerated.
+//!
+//! `generated.at` supersedes v0.1's `timestamp` as the record of a concept's
+//! last meaningful change (§13.1). Arkouda reads `generated.at` first and
+//! falls back to a legacy `timestamp`, which the spec permits, so v0.1
+//! documents keep working.
 //!
 //! One struct serves every concept type. Which keys are meaningful depends on
 //! the type — `deciders` is an ADR's, `owner` a PRD's — but the required set
@@ -14,11 +24,11 @@
 //! [okf]: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md
 
 use crate::concept::types::{self, ConceptType};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// YAML frontmatter from a concept document.
 ///
-/// Unknown keys are ignored rather than rejected, per OKF §9: consumers must
+/// Unknown keys are ignored rather than rejected, per OKF §11: consumers must
 /// not refuse a document because it carries fields they do not recognize.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -42,11 +52,36 @@ pub struct Frontmatter {
     /// Searchable tags.
     pub tags: Vec<String>,
 
-    /// ISO 8601 date or datetime.
+    /// ISO 8601 date or datetime. **Legacy v0.1.** Superseded by
+    /// `generated.at`; still read when `generated` is absent.
     pub timestamp: Option<String>,
 
-    /// Lifecycle status, from the concept type's vocabulary. Producer
-    /// extension.
+    /// How the current content was produced (OKF §5.2). `generated.at` is the
+    /// concept's last meaningful change.
+    pub generated: Option<Generated>,
+
+    /// Verification events (OKF §5.2), newest last. A single verifier may be
+    /// written as one bare `{ by, at }` mapping; §11 requires consumers to
+    /// treat that as a one-element list, which [`one_or_many`] does.
+    #[serde(default, deserialize_with = "one_or_many")]
+    pub verified: Vec<Actor>,
+
+    /// Materials this concept derives from (OKF §5.1).
+    pub sources: Vec<Source>,
+
+    /// Window framing every `sources[].usage_count` (OKF §5.1).
+    pub usage_window: Option<UsageWindow>,
+
+    /// Absolute instant at which the content goes stale (OKF §5.5).
+    pub stale_after: Option<String>,
+
+    /// Lifecycle status, from the concept type's vocabulary.
+    ///
+    /// OKF v0.2 §5.4 also defines a `status`, with the coarse vocabulary
+    /// `draft | stable | deprecated`. Arkouda keeps its own per-type
+    /// vocabulary here: it predates v0.2, every command and every `index.md`
+    /// is built on it, and it is a refinement of OKF's three values rather
+    /// than a conflict with them. See the ADR `adopt-okf-0-2`.
     pub status: Option<String>,
 
     /// People or groups involved in the decision. ADR extension.
@@ -64,6 +99,72 @@ pub struct Frontmatter {
 
     /// Concept ids of the decisions that shaped this document. PRD extension.
     pub decisions: Vec<String>,
+}
+
+/// An actor and the instant it acted (OKF §5.2). Used for `generated` and for
+/// each `verified` entry.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Actor {
+    /// Who or what acted, in the OKF §7 actor convention:
+    /// `<producer>/<version>`, `human:<id>`, or `process:<id>`.
+    pub by: Option<String>,
+    /// ISO 8601 datetime.
+    pub at: Option<String>,
+}
+
+/// Alias kept for readability at the `generated` field, which is one actor
+/// rather than a list of them.
+pub type Generated = Actor;
+
+/// One entry in `sources` (OKF §5.1).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Source {
+    /// Stable key a body footnote cites for per-claim attribution.
+    pub id: Option<String>,
+    /// Required within an entry: the artifact or scope this derives from.
+    pub resource: Option<String>,
+    /// Human-readable label.
+    pub title: Option<String>,
+    /// Who produced the source, in the actor convention.
+    pub author: Option<String>,
+    /// How often the source was exercised over the usage window.
+    pub usage_count: Option<u64>,
+    /// When the source itself last changed.
+    pub last_modified: Option<String>,
+    /// Per-entry override of the shared `usage_window`.
+    pub usage_window: Option<UsageWindow>,
+}
+
+/// The `{ from, to }` datetime range framing a `usage_count` (OKF §5.1).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UsageWindow {
+    /// Start of the window.
+    pub from: Option<String>,
+    /// End of the window.
+    pub to: Option<String>,
+}
+
+/// Deserialize a field that OKF permits as either one mapping or a list of
+/// them. OKF §11: "Consumers MUST treat a bare `verified` mapping as a
+/// one-element list."
+fn one_or_many<'de, D>(deserializer: D) -> Result<Vec<Actor>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(Actor),
+        Many(Vec<Actor>),
+    }
+
+    Ok(match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(actor) => vec![actor],
+        OneOrMany::Many(actors) => actors,
+    })
 }
 
 impl Frontmatter {
@@ -105,9 +206,41 @@ impl Frontmatter {
         self.status.as_deref().unwrap_or("<missing>")
     }
 
+    /// The concept's last meaningful change: `generated.at` (OKF v0.2 §5.2),
+    /// falling back to a legacy v0.1 `timestamp`.
+    ///
+    /// §13.1 supersedes `timestamp` with `generated.at` and permits consumers
+    /// to fall back, so a v0.1 document keeps its timestamp rather than
+    /// looking undated.
+    pub fn content_timestamp(&self) -> Option<&str> {
+        let generated = self
+            .generated
+            .as_ref()
+            .and_then(|generated| generated.at.as_deref())
+            .map(str::trim)
+            .filter(|at| !at.is_empty());
+
+        generated.or_else(|| {
+            self.timestamp
+                .as_deref()
+                .map(str::trim)
+                .filter(|timestamp| !timestamp.is_empty())
+        })
+    }
+
+    /// True when this concept dates itself only the v0.1 way.
+    pub fn uses_legacy_timestamp(&self) -> bool {
+        self.timestamp.is_some()
+            && self
+                .generated
+                .as_ref()
+                .and_then(|generated| generated.at.as_deref())
+                .is_none()
+    }
+
     /// Display timestamp or a placeholder.
     pub fn display_timestamp(&self) -> &str {
-        self.timestamp.as_deref().unwrap_or("<missing>")
+        self.content_timestamp().unwrap_or("<missing>")
     }
 
     /// Every frontmatter concept-id reference this document makes, paired with

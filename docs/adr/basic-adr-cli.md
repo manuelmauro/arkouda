@@ -6,7 +6,7 @@ tags:
   - cli
   - adr
   - documentation
-timestamp: 2026-05-06
+generated: { by: human:manuelmauro, at: 2026-05-06T00:00:00Z }
 status: accepted
 deciders: []
 ---

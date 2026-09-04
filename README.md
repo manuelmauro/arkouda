@@ -9,7 +9,7 @@ Arkouda ships a portable [agent skill](skills/use-arkouda/SKILL.md) that teaches
 
 Arkouda has **two built-in concept types**: the **Architecture Decision Record** (ADR), for why the software is built the way it is, and the **Product Requirements Document** (PRD), for what it is supposed to do. A project [declares its own](#declaring-your-own-concept-types) with `[[types]]` in `.arkoudarc.toml`. Each has its own status vocabulary, required sections, template, and default directory; a PRD's `decisions` frontmatter key points at the ADRs that shaped it, so a requirement and its rationale are one lookup apart. See [`docs/adr/support-product-requirements-documents.md`](docs/adr/support-product-requirements-documents.md).
 
-Documents are stored as an **[Open Knowledge Format][okf] (OKF) v0.1 knowledge bundle**: a directory of Markdown concepts with YAML frontmatter, readable by any OKF-aware tool without special-casing arkouda. A concept's `type` is a frontmatter field, so one bundle may hold both kinds. Arkouda parses the bundle, validates conformance plus its own contract for whichever type each concept declares, scaffolds new entries, generates the `index.md` listing, and pulls a named `## Section` out for you. Anything a one-line shell pipeline does well — content search, counting, slicing, full-file printing — is left to `rg`, `grep`, `awk`, `cat`, and friends. See [`docs/adr/adopt-okf.md`](docs/adr/adopt-okf.md), [`docs/adr/defer-to-unix-tools.md`](docs/adr/defer-to-unix-tools.md), and [`docs/adr/ls-style-list-and-decision.md`](docs/adr/ls-style-list-and-decision.md) for the rationale.
+Documents are stored as an **[Open Knowledge Format][okf] (OKF) v0.2 knowledge bundle**: a directory of Markdown concepts with YAML frontmatter, readable by any OKF-aware tool without special-casing arkouda. A concept's `type` is a frontmatter field, so one bundle may hold both kinds. Arkouda parses the bundle, validates conformance plus its own contract for whichever type each concept declares, scaffolds new entries, generates the `index.md` listing, and pulls a named `## Section` out for you. Anything a one-line shell pipeline does well — content search, counting, slicing, full-file printing — is left to `rg`, `grep`, `awk`, `cat`, and friends. See [`docs/adr/adopt-okf.md`](docs/adr/adopt-okf.md), [`docs/adr/defer-to-unix-tools.md`](docs/adr/defer-to-unix-tools.md), and [`docs/adr/ls-style-list-and-decision.md`](docs/adr/ls-style-list-and-decision.md) for the rationale.
 
 [okf]: https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md
 
@@ -66,7 +66,11 @@ Global flags: `--dir <path>` (also `ADR_DIR`), `-q/--quiet`.
 
 Every document is an OKF *concept*. Its **concept id is its path within the bundle**, minus the `.md` suffix — so `docs/adr/use-postgres.md` is `use-postgres`, and a nested `docs/adr/security/mtls.md` is `security/mtls`. There is no `id` frontmatter key.
 
-`type` decides which contract a concept is checked against. The required frontmatter keys are the same for both built-in types — `type`, `title`, `description`, `status`, `timestamp` — and that set is *arkouda's* profile, not OKF's: OKF v0.1 requires only `type`, and everything else arkouda insists on is layered on top.
+`type` decides which contract a concept is checked against. The required frontmatter keys are the same for both built-in types — `type`, `title`, `description`, `status`, and a content timestamp — and that set is *arkouda's* profile, not OKF's: OKF requires only `type`, and everything else arkouda insists on is layered on top.
+
+A concept's last meaningful change is `generated: { by, at }` (OKF §5.2). OKF v0.2 supersedes v0.1's `timestamp` with it, and arkouda reads `generated.at` first, falling back to a legacy `timestamp` — so **v0.1 documents keep working**, with an `E017` warning as the only prompt to migrate. Instants in the v0.2 keys (`generated.at`, `verified[].at`, `stale_after`) must carry an explicit offset, e.g. `2026-05-06T14:30:00Z`; the retired `timestamp` still accepts a plain date.
+
+The v0.2 provenance, trust, and lifecycle families — `sources` with its credibility signals, `usage_window`, `generated`, `verified`, `stale_after` — are all parsed. None is required, and §11 forbids rejecting a concept for missing any of them.
 
 | | ADR | PRD |
 | --- | --- | --- |
@@ -79,6 +83,8 @@ Every document is an OKF *concept*. Its **concept id is its path within the bund
 | extensions | `deciders`, `superseded_by` | `owner`, `target_release`, `decisions`, `superseded_by` |
 
 Apart from `Status`, the two share no section headings — a PRD's problem statement is not a decision record's context, and pretending otherwise would make the ADR vocabulary look universal.
+
+OKF v0.2 §5.4 also defines a `status`, with the coarse vocabulary `draft | stable | deprecated`. Arkouda keeps its own per-type vocabularies, which refine rather than contradict it — see [`docs/adr/adopt-okf-0-2.md`](docs/adr/adopt-okf-0-2.md). A project that wants OKF's exact three values can declare a type whose `statuses` are `["draft", "stable", "deprecated"]`.
 
 ### An ADR
 
@@ -187,13 +193,15 @@ The per-type directories are a default write target and a search scope, not a sc
 
 | Tier | Codes | Applies to |
 | --- | --- | --- |
-| OKF conformance | `E000`, `E004`, `E007`, `E010`, `E011`, `E012` | every concept, always |
-| arkouda profile | `E001`, `E002`, `E006`, `E008` | concepts whose `type` resolves to a configured type |
+| OKF conformance | `E000`, `E004`, `E010`, `E011`, `E012` | every concept, always |
+| arkouda profile | `E001`, `E002`, `E006`, `E007`, `E008` | concepts whose `type` resolves to a configured type |
 | template contract | `E003` (status vocabulary), `E009` (required sections) | that type's vocabulary, and its sections when it names any |
 
 A concept declaring a type no `[[types]]` table configures is checked for OKF conformance, reported as an `E005` **warning**, and left to pass. It is not skipped — its concept id, its heading, and its place in the bundle are still arkouda's business, and it still appears in `list` and `index`. Since types are user-definable, an unrecognized `type` is ordinarily one you have not declared rather than a mistake, so arkouda tells you about it instead of failing your build over a bundle that is perfectly conformant to the format it implements.
 
-Following OKF's permissive-consumption rule (§9), four diagnostics are **warnings** and never fail the run: `E005` (no configured type declares this concept's `type`), `E013` (the bundle declares an OKF version arkouda doesn't implement), `E014` (`index.md` is stale — run `arkouda index`), and `E015` (a `decisions` or `superseded_by` reference does not resolve — which may simply mean it points into a bundle this invocation did not load).
+`E007` and `E008` sit in arkouda's profile rather than the OKF tier because OKF §4.2 says plainly that there are no required body sections: a concept with no `#` heading is conformant, and failing one would mean rejecting a bundle the spec accepts.
+
+Following OKF's permissive-consumption rule (§11), six diagnostics are **warnings** and never fail the run: `E005` (no configured type declares this concept's `type`), `E013` (the bundle declares an OKF version arkouda doesn't implement), `E014` (`index.md` is stale — run `arkouda index`), `E015` (a `decisions` or `superseded_by` reference does not resolve — which may simply mean it points into a bundle this invocation did not load), `E016` (the concept is past its `stale_after` instant), and `E017` (the concept dates itself with v0.1's `timestamp` rather than `generated.at`).
 
 ## Configuration
 

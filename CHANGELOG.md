@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **OKF v0.2.** Arkouda now implements [Open Knowledge Format v0.2](docs/okf/SPEC.md), vendored at upstream commit [`62432a0`](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/62432a095456/okf/SPEC.md). Generated `index.md` files declare `okf_version: "0.2"`. See [`docs/adr/adopt-okf-0-2.md`](docs/adr/adopt-okf-0-2.md).
+- The v0.2 provenance, trust, and lifecycle families are parsed rather than merely tolerated: `sources` (with `id`, `resource`, `title`, and the credibility signals `author`, `usage_count`, `last_modified`), the `usage_window` sibling, `generated`, `verified`, and `stale_after`. `verified` accepts either a list or a single bare `{ by, at }` mapping, which OKF §11 makes a MUST for consumers.
+- **`E016`** *(warning)* — the concept is past its `stale_after` instant (OKF §5.5). A decision whose review date has passed is exactly what an agent should know before relying on it.
+- **`E017`** *(warning)* — the concept dates itself with v0.1's `timestamp` rather than `generated.at`.
+
+### Changed
+
+- **BREAKING.** **`generated: { by, at }` supersedes `timestamp`** (OKF §5.2, §13.1). `arkouda new` scaffolds `generated: { by: arkouda/<version>, at: <now> }` in the OKF §7 actor form — replace the `by` with your own `human:<id>` when you fill the template in. Reading falls back to a legacy `timestamp`, which the spec permits, so **every v0.1 document keeps validating, sorting, and displaying unchanged**; it earns an `E017` warning and nothing more. Arkouda's profile requires *a* content timestamp, not a particular spelling: `E001` fires only when neither key is present, `E002` when `generated` carries no `at`.
+- **BREAKING.** Instants in the v0.2 keys — `generated.at`, `verified[].at`, `stale_after` — must be ISO 8601 datetimes with an explicit offset (`E006`), following the upstream tightening in [`62432a0`](https://github.com/GoogleCloudPlatform/knowledge-catalog/commit/62432a095456). A legacy `timestamp` stays lenient and still accepts a plain date: tightening a key the spec has retired would break documents that are still perfectly readable.
+- **Behaviour change on upgrade.** An existing bundle warns until migrated — `E017` once per document dated with `timestamp`, and `E013` once per bundle whose `index.md` still declares `okf_version: "0.1"`. Both are warnings and neither fails a build. `arkouda index` clears the second; the first is a hand edit per file.
+- Arkouda keeps its per-type `status` vocabularies rather than adopting the `draft | stable | deprecated` that OKF v0.2 §5.4 now defines for the same key. Renaming arkouda's lifecycle would break every document in every bundle in exchange for a coarser signal, and a generic v0.2 consumer treats an unrecognized `status` exactly as it treats a missing one. A project that wants OKF's three values can declare a type whose `statuses` are `["draft", "stable", "deprecated"]`.
+- `Attested Computation` (OKF §10) is not a built-in type. The runtime protocol, attester ABI, and attestation caching it depends on are explicitly deferred by OKF §12, and a project that wants the type can declare it in `.arkoudarc.toml` today.
+- OKF section references throughout the code, README, and skill are renumbered to v0.2: cross-linking §5→§6, index §6→§8, log §7→§9, conformance §9→§11, versioning §11→§12.
+- The `use-arkouda` skill declares `version: 0.7.0`.
+
+### Fixed
+
+- **`E007` moved from the OKF conformance tier to arkouda's profile.** OKF §4.2 states that there are no required body sections, so a concept with no `#` heading is conformant. Failing one meant arkouda could reject a bundle the spec accepts whenever the concept's type was not configured — the exact failure the tiering introduced in 0.6.0 was built to prevent. `E007` and `E008` now apply only to concepts whose type the project configures.
+
 ## [0.6.0] - 2026-09-04
 
 ### Added

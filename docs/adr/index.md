@@ -1,5 +1,5 @@
 ---
-okf_version: "0.1"
+okf_version: "0.2"
 ---
 
 # Architecture Decision Record
@@ -12,6 +12,7 @@ okf_version: "0.1"
 ## Accepted
 
 * [Adopt the Open Knowledge Format](adopt-okf.md) - Store ADRs as an OKF v0.1 knowledge bundle, replacing arkouda's bespoke frontmatter schema with OKF's type/title/description/timestamp fields.
+* [Adopt OKF 0.2](adopt-okf-0-2.md) - Move arkouda from OKF v0.1 to v0.2: generated.at supersedes timestamp, the provenance and lifecycle families are parsed, and arkouda's per-type status stays as a refinement of OKF's coarse one.
 * [Provide a basic ADR navigation and validation CLI](basic-adr-cli.md) - Introduce a small CLI to navigate ADRs and validate their YAML metadata and Markdown structure.
 * [Defer to Unix tools](defer-to-unix-tools.md) - Arkouda exposes structured access to the ADR collection but defers content search and other shell-friendly operations to standard Unix tools.
 * [ls-style list and a decision subcommand](ls-style-list-and-decision.md) - Make arkouda list headerless and ls-style (paths by default, -l for the table) and replace show with arkouda decision <id>, defaulting to the decision section.
