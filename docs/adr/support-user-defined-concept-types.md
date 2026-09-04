@@ -9,7 +9,7 @@ tags:
   - validation
   - okf
 timestamp: 2026-09-04
-status: proposed
+status: accepted
 deciders: []
 ---
 
@@ -17,7 +17,7 @@ deciders: []
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -94,7 +94,9 @@ Partial override is deliberately not offered. A type is a contract; a contract a
 
 `template` points at a Markdown file that `arkouda new` renders. Frontmatter in that file is ignored — `new` generates frontmatter from the descriptor, the title, and the date, as it does today. Its `##` headings and their prose become the scaffolded body, playing the role `template_sections` plays for the built-ins.
 
-The scaffold and the contract stay separate keys. `required_sections` is what `check` enforces; the template is what `new` writes; the template must be a superset. This preserves the property PRD already relies on, where `Approach` and `Open Questions` are prompted for without being worth failing a bundle over. A type with no `template` scaffolds its `required_sections` with a `TODO:` line each, which is a usable default.
+The scaffold and the contract stay separate keys. `required_sections` is what `check` enforces; the template is what `new` writes; the template must be a superset, and a template short of a required section is rejected at load rather than left to scaffold documents that `check` rejects on creation. This preserves the property PRD already relies on, where `Approach` and `Open Questions` are prompted for without being worth failing a bundle over. A type with no `template` scaffolds its `required_sections` with a `TODO:` line each, which is a usable default; a type with neither scaffolds frontmatter and a title.
+
+`## Status` is never taken from a template. Its body is the status label, so `arkouda new` renders it for every type and a template that includes one has it ignored.
 
 ### `check` validates in three tiers
 
