@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **BREAKING.** **Bundles are discovered, not configured.** A bundle is the topmost directory that directly contains an OKF concept — a non-reserved `.md` whose frontmatter declares a `type` — and everything beneath it belongs to that bundle, so a nested concept keeps its path in its id. `list`, `check`, `section`, and `index` read every bundle found. Adding `docs/rfc` is covered on the next run, with nothing to remember. See [`docs/adr/discover-bundles.md`](docs/adr/discover-bundles.md).
+- **BREAKING.** **`dirs` and `[dirs]` are deleted, and a config file carrying either is an error** naming the replacement. Not deprecated: a key that no longer decides anything but still looks authoritative is worse than one that is gone, because the scope would quietly be the whole repository while the file said otherwise.
+- **BREAKING.** The `docs/adr` and `docs/prd` search defaults stop existing, because there is nothing left to default. A conformant bundle in `knowledge/` is found for the same reason one in `docs/adr` is.
+- **`--dir` and `ADR_DIR` narrow the walk rather than declaring a root.** `--dir docs/adr` discovers bundles within `docs/adr`, which for every real layout is that one bundle, so checking a single bundle in CI keeps working.
+- **`arkouda new` picks its target in three steps**: the first bundle that already holds a concept of the type being created, then the `--dir` given, then that type's `default_dir` resolved against where discovery started. The first step stops a project whose ADRs live in `knowledge/decisions` from having `new` start a second bundle in `docs/adr`. The third matters more than it looks: a relative `default_dir` resolved against the process working directory writes into whatever repository the shell happens to be sitting in, which is exactly what the test suite did to this repository before it was fixed.
+- The walk skips `.git`, `node_modules`, `target`, `vendor`, `dist`, `build`, `out`, `.next`, `.venv`, `venv`, `__pycache__`, `coverage`, and hidden directories. Needed only now that it starts at a repository rather than at a bundle, and about correctness as much as speed: a vendored dependency's own OKF documents must not be adopted as this project's concepts.
+
+### Removed
+
+- `ArkoudaError::NoDirForType`. Unreachable: `new` always has a target now.
+
+### Upgrade impact
+
+Delete the `dirs` key from `.arkoudarc.toml`; if that was the file's only content, delete the file. This repository's own config was exactly that and is deleted here.
+
+Every layout these repositories use keeps its concept ids unchanged, and that was verified rather than assumed — the rule finds exactly the roots the configuration used to name.
+
+**One layout does change its ids.** A bundle whose concepts live *only* in subdirectories: with `dirs = ["docs/adr"]` and nothing but `docs/adr/security/mtls.md`, the root was `docs/adr` and the id `security/mtls`; under discovery the root is `docs/adr/security` and the id `mtls`. Ids are references, so `decisions` and `superseded_by` entries pointing at the old spelling break, and nothing detects that automatically. Putting any concept directly in the parent restores the old root.
+
 ## [0.7.0] - 2026-09-04
 
 ### Added

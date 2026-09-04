@@ -23,8 +23,7 @@ pub fn run(args: &NewArgs, cli: &Cli) -> Result<Outcome> {
         return Err(ArkoudaError::InvalidId(id));
     }
 
-    let dirs = super::effective_dirs(cli)?;
-    let target_dir = super::write_dir(&dirs, concept_type)?.to_path_buf();
+    let target_dir = super::write_dir(cli, concept_type)?;
     std::fs::create_dir_all(&target_dir)?;
     let path = target_dir.join(format!("{id}.md"));
     if path.exists() {

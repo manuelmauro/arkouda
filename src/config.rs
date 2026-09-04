@@ -1,29 +1,13 @@
 //! Configuration loaded from `.arkoudarc.toml`.
 //!
 //! Discovery walks up from the starting directory (typically `cwd`) until it
-//! finds a `.arkoudarc.toml` or hits the filesystem root. Relative paths in
-//! `dirs` are resolved against the directory containing the config file, so
-//! the same config works regardless of which subdirectory arkouda is invoked
-//! from.
+//! finds a `.arkoudarc.toml` or hits the filesystem root. Relative paths are
+//! resolved against the directory containing the config file, so the same
+//! config works regardless of which subdirectory arkouda is invoked from.
 //!
-//! `dirs` takes two forms. The flat form is a list every concept type shares:
-//!
-//! ```toml
-//! dirs = ["docs/adr"]
-//! ```
-//!
-//! The typed form gives each type its own roots:
-//!
-//! ```toml
-//! [dirs]
-//! adr = ["docs/adr"]
-//! prd = ["docs/prd"]
-//! ```
-//!
-//! Both parse into one [`Dirs`] model: a type-to-roots map, plus the union
-//! that `list`, `check`, and `section` search. The typed table is a default
-//! write target and a search scope, never a schema — a concept's type comes
-//! from its frontmatter, so any bundle may hold any mix.
+//! The file no longer says where bundles are. They are found by walking for
+//! concepts (ADR `discover-bundles`), so a `dirs` key is rejected rather than
+//! read — see [`reject_dirs`]. What is left here declares *types*, not places.
 //!
 //! `[[types]]` tables declare concept types beyond the built-in ADR and PRD:
 //!
@@ -39,8 +23,8 @@
 //! ```
 //!
 //! [`install_types`] resolves them into the process-wide type registry, and
-//! must run before `dirs` is resolved: a `[dirs]` key is validated against the
-//! registry, so `rfc = [...]` is only meaningful once `rfc` is a type.
+//! must run before a `--type` is resolved or a concept is validated: every one
+//! of those reads the registry.
 
 use crate::concept::manifest::{ManifestError, split_content};
 use crate::concept::markdown;
@@ -55,10 +39,13 @@ const FILENAME: &str = ".arkoudarc.toml";
 
 #[derive(Debug, Deserialize, Default)]
 struct ConfigFile {
-    /// Left as a raw value so the two accepted shapes can be told apart with a
-    /// message that names what is wrong. An untagged enum reports only that
-    /// nothing matched, which is no help at all when the mistake is one stray
-    /// key in the table.
+    /// Kept only so it can be rejected.
+    ///
+    /// Bundles are discovered now, so this key decides nothing. Dropping the
+    /// field instead would have serde ignore it silently, and a key that looks
+    /// authoritative while being inert is worse than one that is gone: the
+    /// scope would quietly be the whole repository while the file said
+    /// otherwise.
     #[serde(default)]
     dirs: Option<toml::Value>,
     #[serde(default)]
@@ -96,7 +83,8 @@ struct TypeDef {
     /// Section `arkouda section <id>` prints when given no name.
     #[serde(default)]
     primary_section: Option<String>,
-    /// Directory `arkouda new` writes into when `[dirs]` does not say.
+    /// Last-resort directory for `arkouda new`, when no discovered bundle
+    /// already holds a concept of this type and no `--dir` was given.
     default_dir: String,
     /// Markdown file whose `##` headings become the scaffold. Resolved
     /// relative to the config file.
@@ -107,97 +95,20 @@ struct TypeDef {
     extensions: Vec<String>,
 }
 
-/// Bundle roots, per concept type.
+/// Reject a retired `dirs` key, naming what replaced it.
 ///
-/// Every known type has an entry, possibly empty. Search commands use
-/// [`Dirs::union`]; `new` writes into the first root of the resolved type.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Dirs {
-    per_type: Vec<(&'static ConceptType, Vec<PathBuf>)>,
-}
-
-impl Dirs {
-    /// Every root, in type order, with duplicates removed. This is the search
-    /// scope: which type a concept is comes from its frontmatter, so every
-    /// root has to be read whatever type the caller cares about.
-    pub fn union(&self) -> Vec<PathBuf> {
-        let mut union: Vec<PathBuf> = Vec::new();
-        for (_, dirs) in &self.per_type {
-            for dir in dirs {
-                if !union.contains(dir) {
-                    union.push(dir.clone());
-                }
-            }
-        }
-        union
+/// Every path that reads the config runs this, so the message arrives on the
+/// first command rather than after someone notices the scope is wrong.
+fn reject_dirs(parsed: &ConfigFile) -> std::result::Result<(), String> {
+    if parsed.dirs.is_none() {
+        return Ok(());
     }
-
-    /// The roots configured for one type, in order. Empty when a typed `dirs`
-    /// table does not mention it.
-    pub fn for_type(&self, concept_type: &ConceptType) -> &[PathBuf] {
-        self.per_type
-            .iter()
-            .find(|(candidate, _)| *candidate == concept_type)
-            .map_or(&[], |(_, dirs)| dirs.as_slice())
-    }
-
-    /// Give every known type the same roots.
-    fn shared(dirs: Vec<PathBuf>) -> Self {
-        Self {
-            per_type: types::all()
-                .iter()
-                .map(|concept_type| (concept_type, dirs.clone()))
-                .collect(),
-        }
-    }
-
-    /// Every type in its own default directory.
-    fn defaults() -> Self {
-        Self {
-            per_type: types::all()
-                .iter()
-                .map(|concept_type| (concept_type, vec![PathBuf::from(&concept_type.default_dir)]))
-                .collect(),
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.per_type.iter().all(|(_, dirs)| dirs.is_empty())
-    }
-}
-
-/// Effective bundle roots for this invocation, given CLI overrides and any
-/// `.arkoudarc.toml` discovered up the tree from `start`.
-///
-/// Precedence: explicit `cli_dir` > `.arkoudarc.toml` `dirs` > each type's
-/// default directory. A `dirs` entry that resolves to nothing counts as
-/// unconfigured.
-pub fn effective_dirs(cli_dir: Option<&Path>, start: &Path) -> Result<Dirs> {
-    if let Some(dir) = cli_dir {
-        return Ok(Dirs::shared(vec![dir.to_path_buf()]));
-    }
-    if let Some(dirs) = discover(start)?
-        && !dirs.is_empty()
-    {
-        return Ok(dirs);
-    }
-    Ok(Dirs::defaults())
-}
-
-fn discover(start: &Path) -> Result<Option<Dirs>> {
-    for ancestor in start.ancestors() {
-        let candidate = ancestor.join(FILENAME);
-        if candidate.is_file() {
-            let text = std::fs::read_to_string(&candidate)?;
-            return Ok(Some(parse(&text, ancestor).map_err(|message| {
-                ArkoudaError::Config {
-                    path: candidate.display().to_string(),
-                    message,
-                }
-            })?));
-        }
-    }
-    Ok(None)
+    Err(
+        "`dirs` is no longer a setting: bundles are found by walking for concepts, so naming \
+         their directories has no effect. Delete the key. To scope one invocation to part of \
+         the tree, pass `--dir`."
+            .to_owned(),
+    )
 }
 
 /// Telemetry toggle from `.arkoudarc.toml` discovered above `start`. Returns
@@ -220,8 +131,8 @@ pub fn telemetry_from_config(start: &Path) -> Result<Option<bool>> {
 
 /// Resolve the concept-type registry for this invocation and install it.
 ///
-/// Must run before anything resolves `dirs`, resolves a `--type`, or validates
-/// a concept: every one of those reads the registry. Commands that never touch
+/// Must run before anything resolves a `--type` or validates a concept: both
+/// read the registry. Commands that never touch
 /// a bundle — `self completions` — skip it, so a malformed config cannot stop
 /// a shell from starting.
 pub fn install_types(start: &Path) -> Result<()> {
@@ -504,88 +415,29 @@ fn discover_file(start: &Path) -> Result<Option<(PathBuf, PathBuf, String)>> {
     Ok(None)
 }
 
-fn parse(text: &str, base: &Path) -> std::result::Result<Dirs, String> {
+/// Validate a config file: that it parses, and that it carries no retired key.
+///
+/// What it *declares* is read by [`install_types`] and [`telemetry_from_config`];
+/// this is the check that runs whether or not either of those cares.
+pub fn validate(text: &str) -> std::result::Result<(), String> {
     let parsed: ConfigFile = toml::from_str(text).map_err(|err| err.to_string())?;
-
-    match parsed.dirs {
-        None => Ok(Dirs {
-            per_type: Vec::new(),
-        }),
-        Some(toml::Value::Array(items)) => {
-            let dirs: Vec<PathBuf> = toml::Value::Array(items)
-                .try_into()
-                .map_err(|err| format!("`dirs`: {err}"))?;
-            Ok(Dirs::shared(resolve(dirs, base)))
-        }
-        Some(toml::Value::Table(table)) => typed(table, base),
-        Some(_) => Err(
-            "`dirs` must be a list of paths (`dirs = [\"docs/adr\"]`) or a table of per-type \
-             lists (`[dirs]` with `adr = [...]`)"
-                .to_owned(),
-        ),
-    }
+    reject_dirs(&parsed)
 }
 
-/// `[dirs]` with one key per type slug.
-fn typed(
-    table: toml::map::Map<String, toml::Value>,
-    base: &Path,
-) -> std::result::Result<Dirs, String> {
-    let mut roots: BTreeMap<&'static str, Vec<PathBuf>> = BTreeMap::new();
-
-    for (key, value) in table {
-        // A key that is not a type slug is a typo, and silently searching
-        // nowhere is the worst possible response to one.
-        let Some(concept_type) = types::by_slug(&key) else {
-            return Err(format!(
-                "`dirs` has no concept type `{key}`; known types are {}",
-                types::slugs().join(", ")
-            ));
-        };
-        let dirs: Vec<PathBuf> = value
-            .try_into()
-            .map_err(|err| format!("`dirs.{key}` must be a list of paths: {err}"))?;
-        roots.insert(concept_type.slug.as_str(), resolve(dirs, base));
-    }
-
-    Ok(Dirs {
-        per_type: types::all()
-            .iter()
-            .map(|concept_type| {
-                let dirs = roots.remove(concept_type.slug.as_str()).unwrap_or_default();
-                (concept_type, dirs)
-            })
-            .collect(),
+/// Validate the `.arkoudarc.toml` above `start`, if there is one.
+pub fn check_config(start: &Path) -> Result<()> {
+    let Some((path, _, text)) = discover_file(start)? else {
+        return Ok(());
+    };
+    validate(&text).map_err(|message| ArkoudaError::Config {
+        path: path.display().to_string(),
+        message,
     })
-}
-
-fn resolve(dirs: Vec<PathBuf>, base: &Path) -> Vec<PathBuf> {
-    dirs.into_iter()
-        .map(|dir| {
-            if dir.is_absolute() {
-                dir
-            } else {
-                base.join(dir)
-            }
-        })
-        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn parsed(text: &str) -> Dirs {
-        parse(text, Path::new("/repo")).expect("ok")
-    }
-
-    fn adr() -> &'static ConceptType {
-        types::by_slug("adr").expect("built in")
-    }
-
-    fn prd() -> &'static ConceptType {
-        types::by_slug("prd").expect("built in")
-    }
 
     fn temp_dir(name: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!("arkouda-config-{name}"));
@@ -600,106 +452,36 @@ mod tests {
     }
 
     #[test]
-    fn the_flat_form_is_shared_by_every_type() {
-        let dirs = parsed("dirs = [\"docs/adr\", \"services/foo/adr\"]\n");
-        let expected = vec![
-            PathBuf::from("/repo/docs/adr"),
-            PathBuf::from("/repo/services/foo/adr"),
-        ];
-        assert_eq!(dirs.union(), expected);
-        assert_eq!(dirs.for_type(adr()), expected);
-        assert_eq!(dirs.for_type(prd()), expected);
-    }
-
-    #[test]
-    fn the_typed_form_gives_each_type_its_own_roots() {
-        let dirs = parsed("[dirs]\nadr = [\"docs/adr\"]\nprd = [\"docs/prd\"]\n");
-        assert_eq!(dirs.for_type(adr()), [PathBuf::from("/repo/docs/adr")]);
-        assert_eq!(dirs.for_type(prd()), [PathBuf::from("/repo/docs/prd")]);
-        assert_eq!(
-            dirs.union(),
-            vec![
-                PathBuf::from("/repo/docs/adr"),
-                PathBuf::from("/repo/docs/prd"),
-            ],
-            "the union is what list, check, and section search"
-        );
-    }
-
-    #[test]
-    fn a_typed_table_may_mention_one_type_only() {
-        let dirs = parsed("[dirs]\nadr = [\"docs/adr\"]\n");
-        assert_eq!(dirs.for_type(adr()), [PathBuf::from("/repo/docs/adr")]);
-        assert!(
-            dirs.for_type(prd()).is_empty(),
-            "an explicit table is a complete declaration; arkouda must not \
-             invent a root the project never named"
-        );
-        assert_eq!(dirs.union(), vec![PathBuf::from("/repo/docs/adr")]);
-    }
-
-    #[test]
-    fn an_unknown_type_key_is_an_error() {
-        let error = parse("[dirs]\nrfc = [\"docs/rfc\"]\n", Path::new("/repo"))
-            .expect_err("a typo must not silently search nowhere");
-        assert!(error.contains("rfc"), "{error}");
-    }
-
-    #[test]
-    fn the_union_deduplicates_shared_roots() {
-        let dirs = parsed("[dirs]\nadr = [\"docs\"]\nprd = [\"docs\"]\n");
-        assert_eq!(dirs.union(), vec![PathBuf::from("/repo/docs")]);
-    }
-
-    #[test]
-    fn keeps_absolute_paths_as_is() {
-        assert_eq!(
-            parsed("dirs = [\"/abs/adr\"]\n").union(),
-            vec![PathBuf::from("/abs/adr")]
-        );
-    }
-
-    #[test]
-    fn an_empty_or_missing_dirs_key_falls_back_to_the_defaults() {
-        for text in ["dirs = []\n", "[dirs]\n", ""] {
-            assert!(parsed(text).is_empty(), "{text:?}");
+    fn a_dirs_key_is_rejected_with_its_replacement_named() {
+        // Silently ignoring it would leave the scope quietly set to the whole
+        // repository while the file said otherwise.
+        for text in [
+            "dirs = [\"docs/adr\"]\n",
+            "[dirs]\nadr = [\"docs/adr\"]\n",
+            "dirs = []\n",
+        ] {
+            let error = validate(text).expect_err("a dirs key must be rejected");
+            assert!(error.contains("`dirs` is no longer a setting"), "{error}");
+            assert!(
+                error.contains("--dir"),
+                "the message must name the replacement: {error}"
+            );
         }
-
-        let defaults = effective_dirs(None, Path::new("/nonexistent/repo")).expect("ok");
-        assert_eq!(defaults.for_type(adr()), [PathBuf::from("docs/adr")]);
-        assert_eq!(defaults.for_type(prd()), [PathBuf::from("docs/prd")]);
     }
 
     #[test]
-    fn the_cli_override_replaces_every_root() {
-        let dirs = effective_dirs(Some(Path::new("/tmp/x")), Path::new("/repo")).expect("ok");
-        assert_eq!(dirs.union(), vec![PathBuf::from("/tmp/x")]);
-        assert_eq!(dirs.for_type(prd()), [PathBuf::from("/tmp/x")]);
+    fn a_config_without_dirs_validates() {
+        assert!(validate("").is_ok());
+        assert!(validate("telemetry = false\n").is_ok());
+        assert!(
+            validate("[[types]]\nslug = \"rfc\"\nokf_type = \"RFC\"\nstatuses = [\"draft\"]\ndefault_dir = \"docs/rfc\"\n")
+                .is_ok()
+        );
     }
 
     #[test]
     fn malformed_toml_is_an_error() {
-        assert!(parse("dirs = not-a-list\n", Path::new("/repo")).is_err());
-    }
-
-    #[test]
-    fn a_malformed_dirs_value_says_what_is_wrong() {
-        // The classic mistake is a stray key after `[dirs]`, which TOML reads
-        // as part of the table. Naming it beats "no variant matched".
-        let error = parse(
-            "[dirs]\nadr = [\"docs/adr\"]\ntelemetry = false\n",
-            Path::new("/repo"),
-        )
-        .expect_err("`telemetry` is not a concept type");
-        assert!(error.contains("telemetry"), "{error}");
-
-        let error = parse("[dirs]\nadr = \"docs/adr\"\n", Path::new("/repo"))
-            .expect_err("a type's roots are a list");
-        assert!(error.contains("dirs.adr"), "{error}");
-
-        let error =
-            parse("dirs = 3\n", Path::new("/repo")).expect_err("neither a list nor a table");
-        assert!(error.contains("list of paths"), "{error}");
+        assert!(validate("this is not toml\n").is_err());
     }
 
     #[test]
@@ -971,6 +753,8 @@ mod tests {
         assert_eq!(parsed.telemetry, Some(false));
         let parsed: ConfigFile = toml::from_str("telemetry = true\n").unwrap();
         assert_eq!(parsed.telemetry, Some(true));
+        // A retired `dirs` key does not disturb the keys that remain; it is
+        // rejected by `validate`, not by deserialization.
         let parsed: ConfigFile = toml::from_str("dirs = [\"docs/adr\"]\n").unwrap();
         assert_eq!(parsed.telemetry, None);
     }
