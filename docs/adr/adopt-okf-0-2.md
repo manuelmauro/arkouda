@@ -3,9 +3,7 @@ type: Architecture Decision Record
 title: Adopt OKF 0.2
 description: 'Move arkouda from OKF v0.1 to v0.2: generated.at supersedes timestamp, the provenance families are parsed, status adopts OKF''s vocabulary, and arkouda''s per-type values move to a new lifecycle key.'
 tags: []
-generated:
-  by: arkouda/0.6.0
-  at: 2026-09-04T11:09:40Z
+generated: { by: human:manuelmauro, at: 2026-09-04T11:09:40Z }
 status: stable
 lifecycle: accepted
 deciders: []
