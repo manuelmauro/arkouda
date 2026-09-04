@@ -150,7 +150,11 @@ fn render_frontmatter(
     generated.insert(Value::from("at"), Value::from(timestamp));
     set("generated", Value::Mapping(generated));
 
-    set("status", Value::from(status.name.as_str()));
+    // Both lifecycle keys: OKF's coarse `status` for any consumer, and the
+    // type's own value for arkouda. The first is the projection of the second,
+    // never an independent choice.
+    set("status", Value::from(status.okf.name()));
+    set("lifecycle", Value::from(status.name.as_str()));
     for extension in &concept_type.template_extensions {
         set(extension.as_str(), Value::Sequence(Vec::new()));
     }
@@ -334,6 +338,7 @@ mod tests {
 
         assert!(rendered.contains("type: Product Requirements Document"));
         assert!(rendered.contains("status: draft"));
+        assert!(rendered.contains("lifecycle: draft"));
         assert!(rendered.contains("owner: []"));
         assert!(rendered.contains("decisions: []"));
         assert!(rendered.contains("## Status\n\nDraft\n"));

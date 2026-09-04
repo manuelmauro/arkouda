@@ -9,7 +9,8 @@ tags:
   - validation
   - okf
 generated: { by: human:manuelmauro, at: 2026-09-04T00:00:00Z }
-status: accepted
+status: stable
+lifecycle: accepted
 deciders: []
 ---
 

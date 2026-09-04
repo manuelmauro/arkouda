@@ -76,7 +76,7 @@ The v0.2 provenance, trust, and lifecycle families — `sources` with its credib
 | --- | --- | --- |
 | `--type` | `adr` | `prd` |
 | OKF `type` | `Architecture Decision Record` | `Product Requirements Document` |
-| statuses | `proposed`, `accepted`, `superseded`, `deprecated`, `rejected` | `draft`, `in-review`, `approved`, `shipped`, `abandoned`, `superseded` |
+| `lifecycle` | `proposed`, `accepted`, `superseded`, `deprecated`, `rejected` | `draft`, `in-review`, `approved`, `shipped`, `abandoned`, `superseded` |
 | required sections | `Status`, `Context`, `Decision`, `Consequences` | `Status`, `Problem`, `Requirements`, `Non-Goals`, `Success Metrics` |
 | primary section | `Decision` | `Requirements` |
 | default directory | `docs/adr` | `docs/prd` |
@@ -84,7 +84,23 @@ The v0.2 provenance, trust, and lifecycle families — `sources` with its credib
 
 Apart from `Status`, the two share no section headings — a PRD's problem statement is not a decision record's context, and pretending otherwise would make the ADR vocabulary look universal.
 
-OKF v0.2 §5.4 also defines a `status`, with the coarse vocabulary `draft | stable | deprecated`. Arkouda keeps its own per-type vocabularies, which refine rather than contradict it — see [`docs/adr/adopt-okf-0-2.md`](docs/adr/adopt-okf-0-2.md). A project that wants OKF's exact three values can declare a type whose `statuses` are `["draft", "stable", "deprecated"]`.
+### Two lifecycle keys
+
+`status` holds OKF §5.4's vocabulary — `draft | stable | deprecated`, absent reading as `stable` — so any OKF consumer can read an arkouda bundle without knowing its types. The per-type vocabulary lives in **`lifecycle`**:
+
+```yaml
+status: stable          # OKF §5.4 — what any consumer reads
+lifecycle: accepted     # arkouda — what a reader of decisions wants
+```
+
+They are not independent. `status` is the **projection** of `lifecycle`; each type declares where its values land, `arkouda new` writes both from one choice, and `check` reports a pair that disagrees (`E019`).
+
+| | `draft` | `stable` | `deprecated` |
+| --- | --- | --- | --- |
+| ADR | `proposed` | `accepted` | `superseded`, `deprecated`, `rejected` |
+| PRD | `draft`, `in-review` | `approved`, `shipped` | `abandoned`, `superseded` |
+
+Nothing user-visible moved: `list -l`'s status column, `--sort status`, and `index.md`'s status headings all still show the per-type value. A document written before 0.7, with the per-type value still in `status`, keeps sorting, grouping, and displaying exactly as it did — it earns an `E020` warning naming the two keys to write instead, and nothing more.
 
 ### An ADR
 
@@ -195,13 +211,13 @@ The per-type directories are a default write target and a search scope, not a sc
 | --- | --- | --- |
 | OKF conformance | `E000`, `E004`, `E010`, `E011`, `E012` | every concept, always |
 | arkouda profile | `E001`, `E002`, `E006`, `E007`, `E008` | concepts whose `type` resolves to a configured type |
-| template contract | `E003` (status vocabulary), `E009` (required sections) | that type's vocabulary, and its sections when it names any |
+| template contract | `E003` (`lifecycle` vocabulary), `E009` (required sections), `E018`/`E019` (`status` and its agreement with `lifecycle`) | that type's vocabulary, and its sections when it names any |
 
 A concept declaring a type no `[[types]]` table configures is checked for OKF conformance, reported as an `E005` **warning**, and left to pass. It is not skipped — its concept id, its heading, and its place in the bundle are still arkouda's business, and it still appears in `list` and `index`. Since types are user-definable, an unrecognized `type` is ordinarily one you have not declared rather than a mistake, so arkouda tells you about it instead of failing your build over a bundle that is perfectly conformant to the format it implements.
 
 `E007` and `E008` sit in arkouda's profile rather than the OKF tier because OKF §4.2 says plainly that there are no required body sections: a concept with no `#` heading is conformant, and failing one would mean rejecting a bundle the spec accepts.
 
-Following OKF's permissive-consumption rule (§11), six diagnostics are **warnings** and never fail the run: `E005` (no configured type declares this concept's `type`), `E013` (the bundle declares an OKF version arkouda doesn't implement), `E014` (`index.md` is stale — run `arkouda index`), `E015` (a `decisions` or `superseded_by` reference does not resolve — which may simply mean it points into a bundle this invocation did not load), `E016` (the concept is past its `stale_after` instant), and `E017` (the concept dates itself with v0.1's `timestamp` rather than `generated.at`).
+Following OKF's permissive-consumption rule (§11), seven diagnostics are **warnings** and never fail the run: `E005` (no configured type declares this concept's `type`), `E013` (the bundle declares an OKF version arkouda doesn't implement), `E014` (`index.md` is stale — run `arkouda index`), `E015` (a `decisions` or `superseded_by` reference does not resolve — which may simply mean it points into a bundle this invocation did not load), `E016` (the concept is past its `stale_after` instant), `E017` (the concept dates itself with v0.1's `timestamp` rather than `generated.at`), and `E020` (the per-type value is still in `status`, arkouda's pre-0.7 spelling of `lifecycle`).
 
 ## Configuration
 
@@ -239,7 +255,8 @@ Decisions and requirements are two document types out of many a repo might keep.
 [[types]]
 slug = "rfc"                                        # what `--type` takes
 okf_type = "Request for Comments"                   # what its documents declare
-statuses = ["draft", "active", "withdrawn"]         # lifecycle order; the first is `new`'s default
+statuses = ["draft", "active", "withdrawn"]         # `lifecycle` values; the first is `new`'s default
+okf_status = { active = "stable", withdrawn = "deprecated" }   # optional; where each lands in OKF's `status`
 required_sections = ["Status", "Summary", "Motivation"]   # optional
 primary_section = "Summary"                         # optional; what `section <id>` prints
 default_dir = "docs/rfc"
@@ -248,6 +265,8 @@ extensions = ["sponsors"]                           # optional frontmatter keys 
 ```
 
 `slug`, `okf_type`, `statuses`, and `default_dir` are required. Status labels are derived from their names, so `in-review` displays as `In Review`.
+
+`okf_status` says which of OKF's `draft | stable | deprecated` each of your statuses projects onto — that projection is what `arkouda new` writes into `status` and what `check` enforces agreement with. A status you don't map projects onto `stable`, or onto itself if it's spelled exactly like one of OKF's three. Arkouda won't guess that an unfamiliar status means `deprecated`: writing that into a document nobody retired would be worse than the coarseness it avoids. **Map your terminal states.**
 
 **`required_sections` is optional, and that is the point.** A type that names none gets a lifecycle, a template, and full `list`/`index`/`section` support with no body contract — nothing to fail `check` over. Use it for concepts whose shape is not worth enforcing. `primary_section` is optional too; without it, `arkouda section <id>` needs an explicit section name.
 

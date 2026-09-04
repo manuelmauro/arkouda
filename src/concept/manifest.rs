@@ -125,7 +125,8 @@ mod tests {
 type: Architecture Decision Record
 title: Basic ADR CLI
 description: Navigate ADRs
-status: accepted
+status: stable
+lifecycle: accepted
 generated: { by: human:test, at: 2026-05-06T00:00:00Z }
 ---
 
@@ -200,7 +201,8 @@ some_producer_extension: 42
 type: Architecture Decision Record
 title: X
 description: x
-status: proposed
+status: draft
+lifecycle: proposed
 generated: { by: human:test, at: 2026-05-06T00:00:00Z }
 ---
 

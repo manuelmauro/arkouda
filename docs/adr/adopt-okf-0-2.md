@@ -1,12 +1,13 @@
 ---
 type: Architecture Decision Record
 title: Adopt OKF 0.2
-description: 'Move arkouda from OKF v0.1 to v0.2: generated.at supersedes timestamp, the provenance and lifecycle families are parsed, and arkouda''s per-type status stays as a refinement of OKF''s coarse one.'
+description: 'Move arkouda from OKF v0.1 to v0.2: generated.at supersedes timestamp, the provenance families are parsed, status adopts OKF''s vocabulary, and arkouda''s per-type values move to a new lifecycle key.'
 tags: []
 generated:
   by: arkouda/0.6.0
   at: 2026-09-04T11:09:40Z
-status: accepted
+status: stable
+lifecycle: accepted
 deciders: []
 ---
 
@@ -37,7 +38,7 @@ A later upstream commit — [`62432a0`](https://github.com/GoogleCloudPlatform/k
 
 **OKF v0.2 §5.4 defines `status`.** It was a producer extension in v0.1, which is how arkouda uses it — a per-type lifecycle, `proposed`/`accepted`/`superseded`/`deprecated`/`rejected` for an ADR, `draft`/`in-review`/`approved`/`shipped`/`abandoned`/`superseded` for a PRD, and whatever a project declares for its own types. v0.2 gives the same key a fixed three-value vocabulary — `draft | stable | deprecated` — with `stable` as the default when absent.
 
-The key is the same, the meanings overlap but do not match, and `status` is load-bearing in arkouda: it is a column in `list -l`, the second level of every `index.md`, a `--sort` field, the thing `E003` validates, and a required field in arkouda's profile. Every document in every existing bundle carries one.
+The key is the same, the meanings overlap but do not match, and `status` is load-bearing in arkouda: it is a column in `list -l`, the second level of every `index.md`, a `--sort` field, the thing `E003` validates, and a required field in arkouda's profile. Every document in every existing bundle carries one. Whatever is decided here, it has to keep those bundles readable.
 
 ## Decision
 
@@ -67,13 +68,35 @@ A legacy `timestamp` continues to accept a plain date, a local datetime, or an o
 
 Trust tiers (§5.3) are derivable from `verified` but are not surfaced anywhere yet; there is no command whose output they would change. The data is parsed and available when there is.
 
-### Arkouda's `status` stays, as a refinement of OKF's
+### `status` adopts OKF's vocabulary; the per-type values move to `lifecycle`
 
-Arkouda keeps its per-type vocabularies. It does not adopt `draft | stable | deprecated`, and it does not write a second key.
+`status` means what §5.4 says it means: `draft | stable | deprecated`, absent reading as `stable`. Arkouda's per-type vocabularies move to a new key, **`lifecycle`**:
 
-The alternative is renaming arkouda's lifecycle to free the key, which breaks every document in every bundle in the wild, and forces every project to restate a status it has already written, in exchange for a coarser signal. What a generic v0.2 consumer does with an unrecognized `status` is the same as what it does with a missing one — §5.4 makes `stable` the default, and §11 forbids rejecting the concept — so the cost of the divergence is that an arkouda ADR reads as `stable` to a generic consumer. For an `accepted` ADR that is right; for a `rejected` one it is wrong but harmless, since the concept is still readable and its real status is right there in the frontmatter.
+```yaml
+status: stable          # OKF §5.4 — what any consumer reads
+lifecycle: accepted     # arkouda — what a reader of decisions wants
+```
 
-Arkouda's values are also a strict refinement in the sense that matters: every arkouda vocabulary begins with a not-yet-final status and ends with retired ones, which is the axis §5.4 is measuring. And since [types are user-definable](support-user-defined-concept-types.md), a project that wants OKF's exact vocabulary can have it today by declaring a type whose `statuses` are `["draft", "stable", "deprecated"]`. Making that the built-in default would take the choice away from every project to satisfy a spec that does not ask for it.
+The two are not independent axes. **`status` is the projection of `lifecycle`**, and every concept type declares which of OKF's three values each of its lifecycle values lands on. `arkouda new` writes both from one choice, and `check` reports a pair that disagrees (`E019`) — a `rejected` ADR advertised as `stable` is precisely the fidelity loss adopting the vocabulary was meant to fix.
+
+The built-in projections:
+
+| | `draft` | `stable` | `deprecated` |
+| --- | --- | --- | --- |
+| ADR | `proposed` | `accepted` | `superseded`, `deprecated`, `rejected` |
+| PRD | `draft`, `in-review` | `approved`, `shipped` | `abandoned`, `superseded` |
+
+Both collapse the same way: a not-yet-final state, a live one, and the several ways a document stops being current. That the fine distinctions collapse is the reason `lifecycle` exists — `superseded` and `rejected` are the same to a generic consumer and are not remotely the same to someone reading decisions.
+
+A declared type maps its own vocabulary with an optional `okf_status` table. An unmapped status projects onto `stable`, or onto itself when it is spelled exactly like one of OKF's three. Arkouda does not guess that an unfamiliar status means `deprecated`: writing `status: deprecated` into a document nobody retired would be a worse lie than the coarseness it is trying to avoid.
+
+Nothing user-visible moves. `list -l`'s status column, `--sort status`, and `index.md`'s status headings all read the per-type value, exactly as before — they simply read it from `lifecycle` now. What changes is that the file finally tells a generic OKF consumer something true.
+
+### The pre-0.7 spelling keeps working
+
+A document whose `status` holds a value from its type's vocabulary, with no `lifecycle` key, is the old spelling of the same thing and is read as one. It sorts, groups, and displays unchanged, and earns **`E020`**, a warning naming both keys to write instead.
+
+This is the same shape as the `timestamp` fallback above, for the same reason: a schema move that fails every existing bundle on upgrade is a schema move people route around. The ambiguity the fallback might seem to introduce — a PRD's `draft` and an ADR's `deprecated` are also OKF statuses — is harmless, because those values project onto themselves. Either reading gives the same answer.
 
 ### `# Citations` is left to the author
 
@@ -99,34 +122,44 @@ Requiring a `#` heading, and requiring it to match `title`, is arkouda's contrac
 - Every v0.1 document keeps working, with one warning telling its author what to change and no deadline for changing it.
 - `E016` turns `stale_after` into something a decisions tool can act on: an agent checking prior art now learns that a decision is past its review date.
 - The `E007` conformance bug is fixed, and the tier table now matches what the spec actually requires.
-- A project that wants OKF's `status` vocabulary, or an `Attested Computation` type, can declare either without arkouda shipping an opinion about it.
+- `status` means what the spec says it means, so an arkouda bundle is legible to any OKF consumer without special-casing: a rejected decision reads as `deprecated`, not as `stable`.
+- The finer per-type vocabulary is not lost to the coarsening — it moves to `lifecycle`, where `check` still enforces it and every command still reads it.
+- A project that wants an `Attested Computation` type can declare it without arkouda shipping an opinion about it.
 
 ### Negative
 
 - **Every existing bundle warns until it is migrated.** `E017` fires once per document dated with `timestamp`, and `E013` fires once per bundle whose `index.md` still declares `okf_version: "0.1"`. Both are warnings and neither fails a build, but a large bundle will light up on first run after upgrading. `arkouda index` clears the second; the first is a hand edit per file, or the `arkouda migrate` this ADR declines to design.
-- **Arkouda's `status` is deliberately not OKF's.** A generic v0.2 consumer reads every arkouda concept as `stable`. That is a real, if small, loss of fidelity to a spec arkouda claims to implement, and it is the price of not breaking every bundle in the wild.
+- **A second schema move in two releases.** `status` changed meaning and `lifecycle` is new, one release after types became user-definable. The fallback keeps every existing bundle working, but a user upgrading through both releases sees two migration warnings on the same documents (`E017` and `E020`), and the fix for each is a hand edit.
+- **Two keys now say overlapping things**, and one of them is derived from the other. That redundancy is deliberate — it is what lets a generic consumer read the file without knowing arkouda's types — but it is a thing to keep in step, and `E019` exists precisely because it can fall out of step.
+- **A declared type that does not map its vocabulary gets `stable` for every non-obvious status.** A project with a `withdrawn` state will advertise it as `stable` until it writes an `okf_status` table. The default is the safe direction rather than the right one, and it is documented, but it is still a default that can be wrong.
 - `arkouda new` writes a longer frontmatter block, and its `generated.by` is `arkouda/<version>` rather than a person. Left as-is, a bundle's provenance says a tool wrote everything.
 - The instant format tightened: a `generated.at` of `2026-05-06` is now an `E006` error where a `timestamp` of `2026-05-06` was fine, and the same applies to every other v0.2 instant. Only documents that migrate wrongly hit this.
 
 ### Neutral
 
-- Two diagnostic codes are added, both warnings: `E016` and `E017`. No existing code is renumbered.
+- Five diagnostic codes are added: `E016`, `E017`, and `E020` are warnings; `E018` (a `status` outside OKF's vocabulary) and `E019` (a `status` contradicting its `lifecycle`) are errors. No existing code is renumbered, though `E003` now judges `lifecycle` rather than `status`.
 - Section references throughout the code, README, and skill are renumbered to v0.2: cross-linking §5→§6, index §6→§8, log §7→§9, conformance §9→§11, versioning §11→§12.
 - The vendored spec is re-pinned; `LICENSE.md` is unchanged upstream and its checksum still matches.
 
 ## Alternatives Considered
 
-### Adopt OKF's `status` and move arkouda's lifecycle to another key
+### Keep arkouda's `status` and diverge from §5.4
 
-Fully idiomatic v0.2: `status` would mean what the spec says, and arkouda's vocabulary would live in, say, `lifecycle`.
+Leave the key holding the per-type vocabulary and accept that a generic consumer reads every arkouda concept as `stable`, since §5.4 defaults an unrecognized value the same way it defaults a missing one and §11 forbids rejecting the concept.
 
-Rejected on cost. Every document in every bundle would need editing, `arkouda check` would fail every one of them until they were, and `list -l`, `--sort status`, and every `index.md` would change shape for a second release running. What is bought is that a generic consumer reads `deprecated` instead of `stable` on a retired ADR — a signal that consumer can already get from the concept it is reading. The trade is not close.
+Rejected. It costs nothing today and is wrong in the one direction that matters: a `rejected` or `superseded` decision advertises itself as current to every consumer that is not arkouda. A tool whose README claims OKF conformance should not have its most-read field mean something private. The fallback in this ADR is what makes the alternative unnecessary — the migration is a warning, not a wall.
 
-### Write both keys
+### Put the per-type value in a per-type key
 
-Keep arkouda's `status` and additionally emit an OKF `status` derived from it, under a different name or in a second field.
+`decision_status` on an ADR, `requirement_status` on a PRD, matching how `deciders` and `owner` are already per-type extensions.
 
-Rejected because there is no second key to write it to — §5.4 names `status`, and that is the one already taken. Emitting a derived value into some `okf_status` invents a field the spec does not define, which is worse for a generic consumer than the honest divergence.
+Rejected because every generic operation — the `list -l` column, `--sort status`, `index.md` grouping, `E003` — would have to ask a concept's type which key to read before reading it, and a concept whose type is not configured would have no key at all. One shared `lifecycle` keeps all of that type-agnostic.
+
+### Derive `status` without storing it
+
+Compute the OKF projection on demand and never write it into the file, keeping one key on disk.
+
+Rejected because the file is the interface. A generic OKF consumer reads bytes, not arkouda's projection table; a `status` that exists only inside arkouda is a `status` that does not exist. Storing it is the entire point, and `E019` is what keeps the stored copy honest.
 
 ### Implement `Attested Computation` as a built-in type
 

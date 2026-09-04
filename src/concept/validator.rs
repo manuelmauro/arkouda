@@ -32,7 +32,7 @@
 
 use crate::concept::frontmatter::UsageWindow;
 use crate::concept::manifest::{ManifestError, split_content};
-use crate::concept::types::{self, ConceptType};
+use crate::concept::types::{self, ConceptType, OkfStatus};
 use crate::concept::{Frontmatter, Manifest, OKF_VERSION, is_valid_id, markdown};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use std::collections::{HashMap, HashSet};
@@ -136,6 +136,13 @@ pub enum DiagnosticCode {
     /// The concept dates itself with v0.1's `timestamp` rather than
     /// `generated.at`. Warning.
     E017,
+    /// `status` is not one of OKF §5.4's `draft | stable | deprecated`.
+    E018,
+    /// `status` contradicts the OKF projection of `lifecycle`.
+    E019,
+    /// The per-type lifecycle is in `status`, arkouda's pre-0.7 spelling,
+    /// rather than in `lifecycle`. Warning.
+    E020,
 }
 
 impl fmt::Display for DiagnosticCode {
@@ -230,16 +237,25 @@ fn check_profile_fields(
         "Add a `description` summarizing the concept itself (what was decided, or \
          what is being built — not just the topic) in one sentence.",
     );
-    check_required_field(
-        result,
-        "status",
-        manifest.frontmatter.status.as_deref(),
-        &format!(
-            "Add `status: {}` or another value from: {}.",
-            concept_type.default_status().name,
-            concept_type.status_list()
-        ),
-    );
+    if manifest
+        .frontmatter
+        .resolved_lifecycle(Some(concept_type))
+        .is_none()
+    {
+        result.errors.push(
+            Diagnostic::new(
+                DiagnosticCode::E001,
+                "missing required frontmatter field `lifecycle`",
+            )
+            .with_hint(format!(
+                "Add `lifecycle: {}` or another value from: {}. `status` carries OKF's coarse \
+                 `{}` instead.",
+                concept_type.default_status().name,
+                concept_type.status_list(),
+                OkfStatus::vocabulary()
+            )),
+        );
+    }
     // OKF v0.2 §13.1 supersedes `timestamp` with `generated.at`, and permits
     // reading the legacy key. Either satisfies the profile; neither does not.
     if manifest.frontmatter.content_timestamp().is_none() {
@@ -413,23 +429,110 @@ fn stale_diagnostic(stale_after: &str, now: DateTime<Utc>) -> Option<Diagnostic>
     })
 }
 
+/// Judge the two lifecycle keys and the relationship between them.
+///
+/// `lifecycle` is arkouda's per-type vocabulary; `status` is OKF §5.4's coarse
+/// one. They are not independent: `status` is the projection of `lifecycle`,
+/// so a pair that disagrees is telling a generic OKF consumer something the
+/// bundle's own contract contradicts.
 fn check_status_vocabulary(
     manifest: &Manifest,
     concept_type: &ConceptType,
     result: &mut ValidationResult,
 ) {
-    if let Some(status) = non_empty(manifest.frontmatter.status.as_deref())
-        && concept_type.status(status).is_none()
+    let frontmatter = &manifest.frontmatter;
+    let lifecycle = frontmatter.resolved_lifecycle(Some(concept_type));
+
+    if let Some(declared) = non_empty(frontmatter.lifecycle.as_deref())
+        && concept_type.status(declared).is_none()
     {
         result.errors.push(
             Diagnostic::new(
                 DiagnosticCode::E003,
                 format!(
-                    "invalid status `{status}` for type `{}`",
+                    "invalid lifecycle `{declared}` for type `{}`",
                     concept_type.okf_type
                 ),
             )
             .with_hint(format!("Use one of: {}.", concept_type.status_list())),
+        );
+    }
+
+    if frontmatter.uses_legacy_status(Some(concept_type)) {
+        let value = lifecycle.unwrap_or_default();
+        let projection = concept_type
+            .status(value)
+            .map_or(OkfStatus::Stable, |status| status.okf);
+        result.warnings.push(
+            Diagnostic::new(
+                DiagnosticCode::E020,
+                format!("`status: {value}` is the pre-0.7 spelling of `lifecycle`"),
+            )
+            .with_hint(format!(
+                "Write `lifecycle: {value}` and `status: {}`. OKF v0.2 §5.4 defines `status` as \
+                 `{}`, so the per-type vocabulary moved to its own key. Reading the old spelling \
+                 continues to work.",
+                projection.name(),
+                OkfStatus::vocabulary()
+            )),
+        );
+        return;
+    }
+
+    let Some(declared) = non_empty(frontmatter.status.as_deref()) else {
+        // Absent `status` means `stable` (§5.4). That is a lie only when the
+        // lifecycle projects elsewhere.
+        if let Some(expected) = lifecycle.and_then(|value| concept_type.status(value))
+            && expected.okf != OkfStatus::Stable
+        {
+            result.errors.push(
+                Diagnostic::new(
+                    DiagnosticCode::E019,
+                    format!(
+                        "no `status`, which OKF reads as `stable`, but `lifecycle: {}` is `{}`",
+                        expected.name,
+                        expected.okf.name()
+                    ),
+                )
+                .with_hint(format!("Add `status: {}`.", expected.okf.name())),
+            );
+        }
+        return;
+    };
+
+    let Some(declared) = OkfStatus::parse(declared) else {
+        result.errors.push(
+            Diagnostic::new(
+                DiagnosticCode::E018,
+                format!("`status: {declared}` is not an OKF status"),
+            )
+            .with_hint(format!(
+                "OKF v0.2 §5.4 defines `status` as `{}`. A per-type value belongs in \
+                 `lifecycle`.",
+                OkfStatus::vocabulary()
+            )),
+        );
+        return;
+    };
+
+    if let Some(expected) = lifecycle.and_then(|value| concept_type.status(value))
+        && expected.okf != declared
+    {
+        result.errors.push(
+            Diagnostic::new(
+                DiagnosticCode::E019,
+                format!(
+                    "`status: {}` contradicts `lifecycle: {}`, which is `{}`",
+                    declared.name(),
+                    expected.name,
+                    expected.okf.name()
+                ),
+            )
+            .with_hint(format!(
+                "Set `status: {}`, or change the lifecycle. `status` is the OKF projection of \
+                 `lifecycle`, not a second opinion.",
+                expected.okf.name()
+            )),
         );
     }
 }
@@ -781,7 +884,8 @@ mod tests {
 type: Architecture Decision Record
 title: Basic ADR CLI
 description: Navigate ADRs.
-status: proposed
+status: draft
+lifecycle: proposed
 generated: { by: human:test, at: 2026-05-06T00:00:00Z }
 ---
 
@@ -812,6 +916,7 @@ type: Product Requirements Document
 title: Bulk ADR Import
 description: Import a directory of loose Markdown files as ADRs.
 status: draft
+lifecycle: draft
 generated: { by: human:test, at: 2026-08-07T00:00:00Z }
 ---
 
@@ -895,7 +1000,8 @@ Metrics.
 type: Architecture Decision Record
 title: Basic ADR CLI
 description: Navigate ADRs.
-status: proposed
+status: draft
+lifecycle: proposed
 generated: { by: human:test, at: 2026-05-06T00:00:00Z }
 ---
 
@@ -1128,7 +1234,8 @@ An ADR template looks like this:
 type: Architecture Decision Record
 title: T
 description: D
-status: proposed
+status: draft
+lifecycle: proposed
 generated: { by: human:test, at: 2026-05-06T00:00:00Z }
 verified: { by: human:ahormati, at: 2026-06-25T09:00:00Z }
 ---
@@ -1189,7 +1296,8 @@ verified: { by: human:ahormati, at: 2026-06-25T09:00:00Z }
 type: Architecture Decision Record
 title: T
 description: D
-status: proposed
+status: draft
+lifecycle: proposed
 generated: { by: reference_agent/gemini-2.5-pro, at: 2026-05-06T00:00:00Z }
 stale_after: 3000-01-01T00:00:00Z
 usage_window: { from: 2026-06-01T00:00:00Z, to: 2026-06-30T00:00:00Z }
@@ -1241,16 +1349,135 @@ sources:
     }
 
     #[test]
+    fn status_carries_okfs_vocabulary_and_lifecycle_carries_the_types() {
+        // The split this release is about: `status` is what a generic OKF
+        // consumer reads, `lifecycle` is what a reader of decisions wants.
+        let manifest = parse("docs/adr/x.md", &good_adr());
+        assert_eq!(manifest.frontmatter.status.as_deref(), Some("draft"));
+        assert_eq!(
+            manifest
+                .frontmatter
+                .resolved_lifecycle(manifest.concept_type()),
+            Some("proposed")
+        );
+        assert!(validate(&manifest).errors.is_empty());
+    }
+
+    #[test]
+    fn a_per_type_value_in_status_is_rejected() {
+        // `accepted` is not an OKF status. Left unchecked it would tell every
+        // generic consumer nothing it can use.
+        let content = good_adr().replace("status: draft", "status: accepted");
+        let result = validate(&parse("docs/adr/x.md", &content));
+        assert!(
+            codes(&result).contains(&DiagnosticCode::E018),
+            "{result:#?}"
+        );
+    }
+
+    #[test]
+    fn status_must_agree_with_the_lifecycle_it_projects_from() {
+        // A `rejected` ADR advertised as `stable` is the exact fidelity loss
+        // adopting OKF's vocabulary was meant to fix.
+        let content = good_adr().replace(
+            "status: draft\nlifecycle: proposed",
+            "status: stable\nlifecycle: rejected",
+        );
+        let result = validate(&parse("docs/adr/x.md", &content));
+        assert!(
+            codes(&result).contains(&DiagnosticCode::E019),
+            "{result:#?}"
+        );
+
+        // Absent `status` means `stable` (§5.4), so it is equally wrong when
+        // the lifecycle projects elsewhere — and fine when it does not.
+        let omitted =
+            good_adr().replace("status: draft\nlifecycle: proposed", "lifecycle: rejected");
+        assert!(
+            codes(&validate(&parse("docs/adr/x.md", &omitted))).contains(&DiagnosticCode::E019)
+        );
+
+        let omitted =
+            good_adr().replace("status: draft\nlifecycle: proposed", "lifecycle: accepted");
+        assert!(
+            validate(&parse("docs/adr/x.md", &omitted))
+                .errors
+                .is_empty()
+        );
+
+        let agreeing = good_adr().replace(
+            "status: draft\nlifecycle: proposed",
+            "status: deprecated\nlifecycle: superseded",
+        );
+        assert!(
+            validate(&parse("docs/adr/x.md", &agreeing))
+                .errors
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn the_pre_0_7_spelling_still_reads_as_a_lifecycle() {
+        // Before 0.7 the per-type value lived in `status`. A bundle written
+        // then keeps sorting, grouping and displaying, and is told what moved.
+        let legacy = good_adr().replace("status: draft\nlifecycle: proposed", "status: accepted");
+        let manifest = parse("docs/adr/x.md", &legacy);
+
+        assert_eq!(
+            manifest
+                .frontmatter
+                .resolved_lifecycle(manifest.concept_type()),
+            Some("accepted"),
+            "the old key is read as the lifecycle it always was"
+        );
+        assert_eq!(manifest.frontmatter.display_status(), "accepted");
+
+        let result = validate(&manifest);
+        assert!(
+            result.errors.is_empty(),
+            "never a failure: {:#?}",
+            result.errors
+        );
+        assert_eq!(warning_codes(&result), [DiagnosticCode::E020]);
+        assert!(
+            result.warnings[0]
+                .fix_hint
+                .as_deref()
+                .unwrap()
+                .contains("status: stable"),
+            "the hint names the projection to write: {:#?}",
+            result.warnings[0]
+        );
+
+        // A legacy value is not also reported as a bad OKF status.
+        assert!(!codes(&result).contains(&DiagnosticCode::E018));
+    }
+
+    #[test]
+    fn a_missing_lifecycle_is_reported_against_the_new_key() {
+        let content = good_adr().replace("status: draft\nlifecycle: proposed\n", "");
+        let result = validate(&parse("docs/adr/x.md", &content));
+        assert!(codes(&result).contains(&DiagnosticCode::E001));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|d| d.message.contains("lifecycle")),
+            "{result:#?}"
+        );
+    }
+
+    #[test]
     fn statuses_are_checked_against_the_declared_type() {
         // `shipped` is valid for a PRD and invalid for an ADR; `accepted` is
         // the other way round.
-        let adr = good_adr().replace("status: proposed", "status: shipped");
+        let adr = good_adr().replace("lifecycle: proposed", "lifecycle: shipped");
         assert!(codes(&validate(&parse("docs/adr/x.md", &adr))).contains(&DiagnosticCode::E003));
 
-        let prd = good_prd().replace("status: draft", "status: accepted");
+        let prd = good_prd().replace("lifecycle: draft", "lifecycle: accepted");
         assert!(codes(&validate(&parse("docs/prd/x.md", &prd))).contains(&DiagnosticCode::E003));
 
-        let prd = good_prd().replace("status: draft", "status: in-review");
+        let prd = good_prd().replace("lifecycle: draft", "lifecycle: in-review");
         assert!(validate(&parse("docs/prd/x.md", &prd)).errors.is_empty());
     }
 
@@ -1300,8 +1527,8 @@ sources:
     #[test]
     fn a_resolvable_reference_is_clean() {
         let prd = good_prd().replace(
-            "status: draft",
-            "status: draft\ndecisions:\n  - basic-adr-cli",
+            "lifecycle: draft",
+            "lifecycle: draft\ndecisions:\n  - basic-adr-cli",
         );
         let results = validate_collection(&[
             parse("docs/prd/bulk-adr-import.md", &prd),
@@ -1315,7 +1542,7 @@ sources:
 
     #[test]
     fn a_dangling_reference_warns_without_failing_the_bundle() {
-        let prd = good_prd().replace("status: draft", "status: draft\ndecisions:\n  - gone");
+        let prd = good_prd().replace("lifecycle: draft", "lifecycle: draft\ndecisions:\n  - gone");
         let results = validate_collection(&[parse("docs/prd/bulk-adr-import.md", &prd)]);
         assert_eq!(warning_codes(&results[0]), [DiagnosticCode::E015]);
         assert!(
@@ -1328,8 +1555,8 @@ sources:
     fn superseded_by_is_resolved_too() {
         // Parsed since it was introduced, never checked until now.
         let content = good_adr().replace(
-            "status: proposed",
-            "status: superseded\nsuperseded_by: gone",
+            "status: draft\nlifecycle: proposed",
+            "status: deprecated\nlifecycle: superseded\nsuperseded_by: gone",
         );
         let results = validate_collection(&[parse("docs/adr/basic-adr-cli.md", &content)]);
         assert_eq!(warning_codes(&results[0]), [DiagnosticCode::E015]);

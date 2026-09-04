@@ -82,7 +82,8 @@ fn by_status<'a>(
     for manifest in manifests {
         let heading = descriptor
             .and_then(|descriptor| {
-                descriptor.status(manifest.frontmatter.status.as_deref().unwrap_or_default())
+                let lifecycle = manifest.frontmatter.resolved_lifecycle(Some(descriptor))?;
+                descriptor.status(lifecycle)
             })
             .map_or(OTHER_HEADING, |status| status.label.as_str());
 

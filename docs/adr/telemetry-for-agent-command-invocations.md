@@ -8,7 +8,8 @@ tags:
   - agents
   - cli
 generated: { by: human:manuelmauro, at: 2026-05-20T00:00:00Z }
-status: accepted
+status: stable
+lifecycle: accepted
 deciders: []
 ---
 

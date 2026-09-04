@@ -8,7 +8,8 @@ tags:
   - interoperability
   - adr
 generated: { by: human:manuelmauro, at: 2026-07-10T00:00:00Z }
-status: accepted
+status: stable
+lifecycle: accepted
 deciders: []
 ---
 

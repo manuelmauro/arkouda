@@ -228,7 +228,8 @@ title: Use Postgres
 description: Store relational data in Postgres.
 tags: []
 generated: { by: human:test, at: 2026-05-06T00:00:00Z }
-status: accepted
+status: stable
+lifecycle: accepted
 deciders: []
 ---
 

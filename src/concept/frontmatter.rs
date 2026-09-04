@@ -75,14 +75,25 @@ pub struct Frontmatter {
     /// Absolute instant at which the content goes stale (OKF §5.5).
     pub stale_after: Option<String>,
 
-    /// Lifecycle status, from the concept type's vocabulary.
+    /// OKF §5.4 lifecycle: `draft | stable | deprecated`. Absent means
+    /// `stable`.
     ///
-    /// OKF v0.2 §5.4 also defines a `status`, with the coarse vocabulary
-    /// `draft | stable | deprecated`. Arkouda keeps its own per-type
-    /// vocabulary here: it predates v0.2, every command and every `index.md`
-    /// is built on it, and it is a refinement of OKF's three values rather
-    /// than a conflict with them. See the ADR `adopt-okf-0-2`.
+    /// This is the coarse, portable signal every OKF consumer understands. It
+    /// is the projection of [`Self::lifecycle`], not an independent axis —
+    /// `arkouda new` writes it, and `check` reports a `status` that
+    /// contradicts the lifecycle it should have come from.
+    ///
+    /// Before arkouda 0.7 this key held the per-type vocabulary that now
+    /// lives in `lifecycle`; see [`Self::resolved_lifecycle`].
     pub status: Option<String>,
+
+    /// Lifecycle from the concept type's own vocabulary — `accepted` for an
+    /// ADR, `shipped` for a PRD, whatever a project declares for its types.
+    ///
+    /// Finer than OKF's three values, which is the point: `superseded` and
+    /// `rejected` both project onto `deprecated`, and the difference is the
+    /// thing a reader of decisions actually wants.
+    pub lifecycle: Option<String>,
 
     /// People or groups involved in the decision. ADR extension.
     pub deciders: Vec<String>,
@@ -167,6 +178,14 @@ where
     })
 }
 
+/// Trim a value and discard it when nothing is left.
+fn non_empty(value: Option<&str>) -> Option<&str> {
+    value.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then_some(trimmed)
+    })
+}
+
 impl Frontmatter {
     /// The concept type this document declares, when arkouda knows it.
     pub fn resolved_type(&self) -> Option<&'static ConceptType> {
@@ -201,9 +220,35 @@ impl Frontmatter {
             .unwrap_or("<missing description>")
     }
 
-    /// Display status or a placeholder.
+    /// The concept's per-type lifecycle, honouring the pre-0.7 spelling.
+    ///
+    /// `lifecycle` when present. Otherwise a `status` holding a value from
+    /// `concept_type`'s vocabulary is the old spelling of the same thing, and
+    /// is read as one — so a bundle written before 0.7 keeps sorting,
+    /// grouping, and displaying exactly as it did.
+    pub fn resolved_lifecycle<'a>(&'a self, concept_type: Option<&ConceptType>) -> Option<&'a str> {
+        if let Some(lifecycle) = non_empty(self.lifecycle.as_deref()) {
+            return Some(lifecycle);
+        }
+        let status = non_empty(self.status.as_deref())?;
+        concept_type
+            .filter(|concept_type| concept_type.status(status).is_some())
+            .map(|_| status)
+    }
+
+    /// True when the per-type lifecycle is only in `status`, the pre-0.7 key.
+    pub fn uses_legacy_status(&self, concept_type: Option<&ConceptType>) -> bool {
+        non_empty(self.lifecycle.as_deref()).is_none()
+            && self.resolved_lifecycle(concept_type).is_some()
+    }
+
+    /// Display lifecycle or a placeholder. This is the `list -l` status column
+    /// and the `index.md` grouping key: the fine per-type value, not OKF's
+    /// coarse projection of it, because the coarse one collapses distinctions
+    /// a reader of decisions came for.
     pub fn display_status(&self) -> &str {
-        self.status.as_deref().unwrap_or("<missing>")
+        self.resolved_lifecycle(self.resolved_type())
+            .unwrap_or("<missing>")
     }
 
     /// The concept's last meaningful change: `generated.at` (OKF v0.2 §5.2),
