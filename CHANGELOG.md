@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-09-04
 
 ### Added
 
@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING.** Every `index.md` regenerates with a new heading structure: `# <Type>` at H1 and `## <Status>` at H2, where before status was the H1. Nesting is uniform, so a single-type bundle pays one extra heading level and consumers parse one shape instead of two. Existing bundles report `E014` (stale index, a warning) until `arkouda index` is run; no concept document needs editing.
 - **BREAKING.** `arkouda new --status` is no longer a clap `ValueEnum`, because which values are valid now depends on `--type`. It is validated against the resolved type's vocabulary and defaults to the first of its lifecycle (`proposed` for an ADR, `draft` for a PRD). Shell completions offer nothing for it until they learn to be type-aware.
 - `E005`, `E003`, and `E009` are now type-relative: `E005` fires when `type` is not one of the types arkouda knows (rather than when it is not `Architecture Decision Record`), `E003` checks `status` against *that type's* vocabulary, and `E009` checks *that type's* required sections. A concept whose `type` arkouda does not know is an `E005` error rather than a skipped file, and its sections are not checked against another type's contract.
+- **Behaviour change on upgrade.** A concept whose required headings exist only inside a code fence validated before and now fails with `E009`. That is the fix working as intended, but it can turn a passing CI run red without the document having changed.
 - The `adr` module is now `concept`, and `AdrStatus` and `ADR_TYPE` are gone, replaced by the per-type descriptor. The `ADR_DIR` environment variable keeps its name for compatibility.
 - `arkouda check` counts "concept(s)" rather than "ADR(s)", and the error text for a missing collection, an ambiguous lookup, and an existing file says "concept" rather than "ADR".
 
@@ -56,10 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Markdown structure is determined by parsing the document rather than scanning lines for a `## ` prefix, fixing two defects. A heading inside a fenced or indented code block counted as a real heading, so an ADR whose only `## Decision` and `## Consequences` headings sat inside a fenced template passed `arkouda check` while missing both sections. And `arkouda decision` truncated its output at the first heading inside a fence. Setext headings (`Title` over `=====`) are now recognized. See [`docs/adr/parse-markdown-instead-of-scanning-lines.md`](docs/adr/parse-markdown-instead-of-scanning-lines.md).
 - Only document-level headings count as sections. A heading nested in a block quote or list item (`> ## Decision`) belongs to that container, so quoting a template no longer satisfies the requirement to have written one.
 - `arkouda decision` ends a section at the next heading of the same or higher level rather than at the next `##`, so an intervening `#` no longer lands in the preceding section's body and a nested `###` subsection is no longer excluded from it.
-
-### Changed
-
-- **Behaviour change on upgrade.** A concept whose required headings exist only inside a code fence validated before and now fails with `E009`. That is the fix working as intended, but it can turn a passing CI run red without the document having changed.
 
 ## [0.5.0] - 2026-07-14
 
@@ -154,6 +151,7 @@ Initial release.
 - Dual MIT/Apache-2.0 license.
 - Agent skills: `skills/arkouda` (how to use the CLI) and `skills/prepare-release` (how to cut a release).
 
+[0.6.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.6.0
 [0.5.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.5.0
 [0.4.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.4.0
 [0.3.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.3.0
