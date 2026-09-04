@@ -1,7 +1,5 @@
 //! Command-line interface definitions.
 
-use crate::concept::types;
-use clap::builder::PossibleValuesParser;
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
@@ -57,8 +55,10 @@ pub struct ListArgs {
     #[arg(long, default_value = "id", value_enum)]
     pub sort: SortBy,
 
-    /// Show only concepts of this type.
-    #[arg(long = "type", value_name = "TYPE", value_parser = PossibleValuesParser::new(types::slugs()))]
+    /// Show only concepts of this type. Slugs come from the built-in types
+    /// and any `[[types]]` declared in `.arkoudarc.toml`, so the valid set is
+    /// resolved after the config is read rather than by clap.
+    #[arg(long = "type", value_name = "TYPE")]
     pub concept_type: Option<String>,
 
     /// Long form: print `ID TYPE STATUS TIMESTAMP PATH TITLE — DESCRIPTION`
@@ -86,8 +86,9 @@ pub struct NewArgs {
     pub title: String,
 
     /// Type of concept to create. Selects the template, the `type` string, the
-    /// status vocabulary, and the target directory.
-    #[arg(long = "type", value_name = "TYPE", default_value = "adr", value_parser = PossibleValuesParser::new(types::slugs()))]
+    /// status vocabulary, and the target directory. Defaults to `adr`, which a
+    /// project that shadows or omits the built-in must override explicitly.
+    #[arg(long = "type", value_name = "TYPE", default_value = "adr")]
     pub concept_type: String,
 
     /// Explicit concept id, used as the filename stem. Defaults to a slug

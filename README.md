@@ -7,7 +7,7 @@
 
 Arkouda ships a portable [agent skill](skills/use-arkouda/SKILL.md) that teaches AI assistants to check what a project already decided — and what it is already trying to build — before making non-trivial choices, and to capture the outcome afterwards. Output is structured for piping, so agents compose these documents with their existing shell toolkit (`rg`, `cat`, `awk`). The schema is strict and validation diagnostics carry machine-readable error codes (`E000`–`E015`) — easy for an agent to act on, easy for CI to gate on.
 
-Arkouda has **two built-in concept types**: the **Architecture Decision Record** (ADR), for why the software is built the way it is, and the **Product Requirements Document** (PRD), for what it is supposed to do. Each has its own status vocabulary, required sections, template, and default directory; a PRD's `decisions` frontmatter key points at the ADRs that shaped it, so a requirement and its rationale are one lookup apart. See [`docs/adr/support-product-requirements-documents.md`](docs/adr/support-product-requirements-documents.md).
+Arkouda has **two built-in concept types**: the **Architecture Decision Record** (ADR), for why the software is built the way it is, and the **Product Requirements Document** (PRD), for what it is supposed to do. A project [declares its own](#declaring-your-own-concept-types) with `[[types]]` in `.arkoudarc.toml`. Each has its own status vocabulary, required sections, template, and default directory; a PRD's `decisions` frontmatter key points at the ADRs that shaped it, so a requirement and its rationale are one lookup apart. See [`docs/adr/support-product-requirements-documents.md`](docs/adr/support-product-requirements-documents.md).
 
 Documents are stored as an **[Open Knowledge Format][okf] (OKF) v0.1 knowledge bundle**: a directory of Markdown concepts with YAML frontmatter, readable by any OKF-aware tool without special-casing arkouda. A concept's `type` is a frontmatter field, so one bundle may hold both kinds. Arkouda parses the bundle, validates conformance plus its own contract for whichever type each concept declares, scaffolds new entries, generates the `index.md` listing, and pulls a named `## Section` out for you. Anything a one-line shell pipeline does well — content search, counting, slicing, full-file printing — is left to `rg`, `grep`, `awk`, `cat`, and friends. See [`docs/adr/adopt-okf.md`](docs/adr/adopt-okf.md), [`docs/adr/defer-to-unix-tools.md`](docs/adr/defer-to-unix-tools.md), and [`docs/adr/ls-style-list-and-decision.md`](docs/adr/ls-style-list-and-decision.md) for the rationale.
 
@@ -66,7 +66,7 @@ Global flags: `--dir <path>` (also `ADR_DIR`), `-q/--quiet`.
 
 Every document is an OKF *concept*. Its **concept id is its path within the bundle**, minus the `.md` suffix — so `docs/adr/use-postgres.md` is `use-postgres`, and a nested `docs/adr/security/mtls.md` is `security/mtls`. There is no `id` frontmatter key.
 
-`type` decides which contract a concept is checked against. The required frontmatter keys are the same for both types — `type`, `title`, `description`, `status`, `timestamp` — and that set is *arkouda's* profile, not OKF's: OKF v0.1 requires only `type`, and everything else arkouda insists on is layered on top.
+`type` decides which contract a concept is checked against. The required frontmatter keys are the same for both built-in types — `type`, `title`, `description`, `status`, `timestamp` — and that set is *arkouda's* profile, not OKF's: OKF v0.1 requires only `type`, and everything else arkouda insists on is layered on top.
 
 | | ADR | PRD |
 | --- | --- | --- |
@@ -78,7 +78,7 @@ Every document is an OKF *concept*. Its **concept id is its path within the bund
 | default directory | `docs/adr` | `docs/prd` |
 | extensions | `deciders`, `superseded_by` | `owner`, `target_release`, `decisions`, `superseded_by` |
 
-Types are **not** user-definable. Apart from `Status`, the two share no section headings — a PRD's problem statement is not a decision record's context, and pretending otherwise would make the ADR vocabulary look universal.
+Apart from `Status`, the two share no section headings — a PRD's problem statement is not a decision record's context, and pretending otherwise would make the ADR vocabulary look universal.
 
 ### An ADR
 
@@ -181,7 +181,19 @@ The per-type directories are a default write target and a search scope, not a sc
 
 `arkouda index` writes each bundle-root `index.md`: every concept under `# <Type>` and then `## <Status>`, each with its one-line description — the whole collection legible in one file, which is what OKF calls progressive disclosure. Nesting is uniform, so a single-type bundle still carries the type heading and consumers parse one shape. `arkouda new` refreshes an existing index but never creates one, since OKF makes indexes optional.
 
-Following OKF's permissive-consumption rule (§9), three diagnostics are **warnings** and never fail the run: `E013` (the bundle declares an OKF version arkouda doesn't implement), `E014` (`index.md` is stale — run `arkouda index`), and `E015` (a `decisions` or `superseded_by` reference does not resolve — which may simply mean it points into a bundle this invocation did not load).
+### What `check` enforces
+
+`arkouda check` validates in three tiers, and which of them a concept is judged by depends on whether its `type` resolves to a configured type:
+
+| Tier | Codes | Applies to |
+| --- | --- | --- |
+| OKF conformance | `E000`, `E004`, `E007`, `E010`, `E011`, `E012` | every concept, always |
+| arkouda profile | `E001`, `E002`, `E006`, `E008` | concepts whose `type` resolves to a configured type |
+| template contract | `E003` (status vocabulary), `E009` (required sections) | that type's vocabulary, and its sections when it names any |
+
+A concept declaring a type no `[[types]]` table configures is checked for OKF conformance, reported as an `E005` **warning**, and left to pass. It is not skipped — its concept id, its heading, and its place in the bundle are still arkouda's business, and it still appears in `list` and `index`. Since types are user-definable, an unrecognized `type` is ordinarily one you have not declared rather than a mistake, so arkouda tells you about it instead of failing your build over a bundle that is perfectly conformant to the format it implements.
+
+Following OKF's permissive-consumption rule (§9), four diagnostics are **warnings** and never fail the run: `E005` (no configured type declares this concept's `type`), `E013` (the bundle declares an OKF version arkouda doesn't implement), `E014` (`index.md` is stale — run `arkouda index`), and `E015` (a `decisions` or `superseded_by` reference does not resolve — which may simply mean it points into a bundle this invocation did not load).
 
 ## Configuration
 
@@ -211,6 +223,32 @@ Both parse into the same model: a type-to-roots map, plus the union of every roo
 | --------- | -------------------------- | -------------------------------------------------------- |
 | Bundle dirs | `docs/adr`, `docs/prd`   | `.arkoudarc.toml` `dirs` → `ADR_DIR=<path>` → `--dir <path>` |
 
+### Declaring your own concept types
+
+Decisions and requirements are two document types out of many a repo might keep. `[[types]]` tables declare the rest, and a declared type gets everything the built-ins get: `--type`, a template, a status lifecycle, `index.md` grouping, and a `check` contract.
+
+```toml
+[[types]]
+slug = "rfc"                                        # what `--type` takes
+okf_type = "Request for Comments"                   # what its documents declare
+statuses = ["draft", "active", "withdrawn"]         # lifecycle order; the first is `new`'s default
+required_sections = ["Status", "Summary", "Motivation"]   # optional
+primary_section = "Summary"                         # optional; what `section <id>` prints
+default_dir = "docs/rfc"
+template = "docs/templates/rfc.md"                  # optional
+extensions = ["sponsors"]                           # optional frontmatter keys to scaffold
+```
+
+`slug`, `okf_type`, `statuses`, and `default_dir` are required. Status labels are derived from their names, so `in-review` displays as `In Review`.
+
+**`required_sections` is optional, and that is the point.** A type that names none gets a lifecycle, a template, and full `list`/`index`/`section` support with no body contract — nothing to fail `check` over. Use it for concepts whose shape is not worth enforcing. `primary_section` is optional too; without it, `arkouda section <id>` needs an explicit section name.
+
+**`template`** points at a Markdown file whose `##` headings and prose become what `arkouda new` scaffolds. It may exceed `required_sections` — that is how you prompt for a section without failing a bundle over it — but it may not fall short of them, or `new` would write documents `check` rejects on creation. `## Status` is always rendered from the status itself, so a template neither needs one nor contributes one. Without a `template`, the required sections are scaffolded with a `TODO:` line each. Paths resolve against the config file.
+
+A declared type whose `slug` **or** `okf_type` matches a built-in **replaces it wholesale** — use this to change ADR's sections or statuses for your project. There is no partial override: a type is a contract, and one assembled from a built-in plus three patches is harder to state than one written out.
+
+Mistakes are caught when the config loads, not when a document fails: a slug `--type` could not take, an empty lifecycle, a `primary_section` outside `required_sections`, a template short of a required section, two tables claiming one slug, or a misspelled key.
+
 ## Shell completions
 
 `arkouda self completions <shell>` prints a completion script to stdout for `bash`, `zsh`, `fish`, `powershell`, or `elvish`.
@@ -228,7 +266,7 @@ arkouda self completions fish | source
 
 ## Telemetry
 
-Arkouda records one JSON event per invocation to a local file under your OS state directory (`~/Library/Application Support/arkouda/telemetry.jsonl` on macOS, `$XDG_STATE_HOME/arkouda/telemetry.jsonl` or `~/.local/state/arkouda/telemetry.jsonl` elsewhere). The data never leaves your machine — there is no network sink. The goal is to learn how AI coding agents actually invoke arkouda so future surface decisions are informed by usage rather than guesses.
+Arkouda records one JSON event per invocation to a local file under your OS state directory (`~/Library/Application Support/arkouda/telemetry.jsonl` on macOS, `$XDG_STATE_HOME/arkouda/telemetry.jsonl` or `~/.local/state/arkouda/telemetry.jsonl` elsewhere). The data never leaves your machine — there is no network sink. The goal is to learn how AI coding agents actually invoke arkouda so future surface decisions are informed by usage rather than guesses. Events carry the subcommand, redacted argv, exit code, duration, the diagnostic codes a `check` produced, and whether a resolved `--type` was built in or declared by the project — never a type's slug, a title, or a path.
 
 Each event captures the subcommand, redacted argv (paths and free-text titles are replaced with `<path>` / `<title>` markers; flag names and short slugs pass through), exit code, duration, and a short agent identifier derived from a small env-var allowlist (`CLAUDECODE` → `claude-code`, `CURSOR_AGENT` → `cursor`, `AIDER` → `aider`). Concept titles, descriptions, and contents are never recorded. Write failures are silently swallowed; the log rotates at 10 MiB keeping one prior file.
 
@@ -260,7 +298,7 @@ The skill is repo-agnostic: it discovers paths via `arkouda list` rather than ha
     arkouda check
 ```
 
-`arkouda check` exits 0 on a clean collection, 1 on any error.
+`arkouda check` exits 0 on a clean collection, 1 on any error. Warnings never fail the run, so a bundle holding concept types you have not declared stays green while still reporting them.
 
 ## Acknowledgements
 

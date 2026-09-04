@@ -1,7 +1,8 @@
 //! Create a new concept from its type's template.
 
 use crate::cli::{Cli, NewArgs};
-use crate::concept::types::{self, ConceptType, Status};
+use crate::commands::Outcome;
+use crate::concept::types::{ConceptType, Status};
 use crate::concept::{index, is_valid_id, slugify};
 use crate::error::{ArkoudaError, Result};
 use chrono::Local;
@@ -10,14 +11,13 @@ use serde_yaml::{Mapping, Value};
 use std::path::{Path, PathBuf};
 
 /// Run the new command.
-pub fn run(args: &NewArgs, cli: &Cli) -> Result<i32> {
-    let concept_type =
-        types::by_slug(&args.concept_type).expect("clap restricts --type to known slugs");
+pub fn run(args: &NewArgs, cli: &Cli) -> Result<Outcome> {
+    let concept_type = super::resolve_type(&args.concept_type)?;
     let status = resolve_status(concept_type, args.status.as_deref())?;
 
     let id = match args.id.as_deref() {
         Some(explicit) => explicit.to_owned(),
-        None => slugify(&args.title, concept_type.slug),
+        None => slugify(&args.title, &concept_type.slug),
     };
     if !is_valid_id(&id) {
         return Err(ArkoudaError::InvalidId(id));
@@ -70,13 +70,20 @@ pub fn run(args: &NewArgs, cli: &Cli) -> Result<i32> {
         );
     }
 
-    Ok(0)
+    Ok(Outcome {
+        exit: 0,
+        codes: Vec::new(),
+        type_kind: Some(concept_type.origin),
+    })
 }
 
 /// Validate `--status` against the resolved type's vocabulary. Statuses are no
 /// longer a clap `ValueEnum` because which values are valid depends on
 /// `--type`, so the check happens here.
-fn resolve_status(concept_type: &ConceptType, requested: Option<&str>) -> Result<&'static Status> {
+fn resolve_status(
+    concept_type: &'static ConceptType,
+    requested: Option<&str>,
+) -> Result<&'static Status> {
     let Some(requested) = requested else {
         return Ok(concept_type.default_status());
     };
@@ -124,14 +131,14 @@ fn render_frontmatter(
         frontmatter.insert(Value::from(key), value);
     };
 
-    set("type", Value::from(concept_type.okf_type));
+    set("type", Value::from(concept_type.okf_type.as_str()));
     set("title", Value::from(title));
     set("description", Value::from(description));
     set("tags", Value::Sequence(Vec::new()));
     set("timestamp", Value::from(timestamp));
-    set("status", Value::from(status.name));
-    for extension in concept_type.template_extensions {
-        set(extension, Value::Sequence(Vec::new()));
+    set("status", Value::from(status.name.as_str()));
+    for extension in &concept_type.template_extensions {
+        set(extension.as_str(), Value::Sequence(Vec::new()));
     }
 
     serde_yaml::to_string(&Value::Mapping(frontmatter))
@@ -153,7 +160,7 @@ fn render_template(
         "---\n{yaml}---\n\n# {title}\n\n## Status\n\n{}\n",
         status.label
     );
-    for section in concept_type.template_sections {
+    for section in &concept_type.template_sections {
         out.push_str(&format!("\n## {}\n\n{}\n", section.heading, section.body));
     }
     out
@@ -163,6 +170,7 @@ fn render_template(
 mod tests {
     use super::*;
     use crate::cli::Command;
+    use crate::concept::types;
     use crate::concept::{Manifest, validator};
     use clap::Parser;
 
@@ -187,7 +195,7 @@ mod tests {
         let Command::New(args) = &cli.command else {
             unreachable!("parsed a `new` invocation")
         };
-        run(args, &cli)
+        run(args, &cli).map(|outcome| outcome.exit)
     }
 
     #[test]
@@ -267,7 +275,7 @@ mod tests {
     /// scaffolds a document that `check` immediately rejects.
     #[test]
     fn every_template_validates_and_declares_its_okf_type() {
-        for concept_type in types::ALL {
+        for concept_type in types::all() {
             let rendered = render_template(
                 concept_type,
                 "Use Postgres",
@@ -285,7 +293,7 @@ mod tests {
 
             assert_eq!(
                 manifest.frontmatter.concept_type.as_deref(),
-                Some(concept_type.okf_type)
+                Some(concept_type.okf_type.as_str())
             );
             assert_eq!(manifest.concept_id, "use-postgres");
 
@@ -301,11 +309,12 @@ mod tests {
 
     #[test]
     fn the_prd_template_scaffolds_its_optional_sections_and_extensions() {
+        let prd = types::by_slug("prd").expect("built in");
         let rendered = render_template(
-            &types::PRD,
+            prd,
             "Bulk ADR Import",
             "Import a directory of loose Markdown files.",
-            types::PRD.default_status(),
+            prd.default_status(),
             "2026-08-07",
         );
 

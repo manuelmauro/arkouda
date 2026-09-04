@@ -1,28 +1,40 @@
 //! List concepts in the collection.
 
 use crate::cli::{Cli, ListArgs, SortBy};
+use crate::commands::Outcome;
 use crate::concept::Manifest;
-use crate::concept::types;
+use crate::concept::types::ConceptType;
 use crate::error::Result;
 
 /// Run the list command.
-pub fn run(args: &ListArgs, cli: &Cli) -> Result<i32> {
+pub fn run(args: &ListArgs, cli: &Cli) -> Result<Outcome> {
+    let wanted = args
+        .concept_type
+        .as_deref()
+        .map(super::resolve_type)
+        .transpose()?;
+
     let dirs = super::search_dirs(cli)?;
     let mut manifests = super::load_manifests(&dirs)?;
-    filter_by_type(&mut manifests, args.concept_type.as_deref());
+    filter_by_type(&mut manifests, wanted);
     sort_manifests(&mut manifests, args.sort);
     if args.long {
         print_long(&manifests);
     } else {
         print_paths(&manifests);
     }
-    Ok(0)
+
+    Ok(Outcome {
+        exit: 0,
+        codes: Vec::new(),
+        type_kind: wanted.map(|concept_type| concept_type.origin),
+    })
 }
 
-/// Keep only concepts declaring `slug`'s type. The filter reads frontmatter,
+/// Keep only concepts declaring `wanted`'s type. The filter reads frontmatter,
 /// not paths: a bundle may hold any mix.
-fn filter_by_type(manifests: &mut Vec<Manifest>, slug: Option<&str>) {
-    let Some(wanted) = slug.and_then(types::by_slug) else {
+fn filter_by_type(manifests: &mut Vec<Manifest>, wanted: Option<&'static ConceptType>) {
+    let Some(wanted) = wanted else {
         return;
     };
     manifests.retain(|manifest| manifest.concept_type() == Some(wanted));
@@ -94,6 +106,7 @@ fn truncate(value: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::concept::types;
     use std::path::Path;
 
     fn manifest(id: &str, concept_type: &str) -> Manifest {
@@ -118,13 +131,13 @@ mod tests {
     fn the_type_filter_reads_frontmatter_not_paths() {
         // Both concepts sit in the same bundle; only `type` separates them.
         let mut manifests = vec![
-            manifest("a-decision", types::ADR.okf_type),
-            manifest("a-requirement", types::PRD.okf_type),
+            manifest("a-decision", &types::adr().okf_type),
+            manifest("a-requirement", &types::prd().okf_type),
             manifest("a-table", "BigQuery Table"),
         ];
 
         let mut prds = manifests.clone();
-        filter_by_type(&mut prds, Some("prd"));
+        filter_by_type(&mut prds, types::by_slug("prd"));
         assert_eq!(ids(&prds), ["a-requirement"]);
 
         filter_by_type(&mut manifests, None);
@@ -136,7 +149,7 @@ mod tests {
         // `list -l` is awk-sliceable, so the type column must never be the
         // multi-word OKF type string.
         for manifest in [
-            manifest("a", types::ADR.okf_type),
+            manifest("a", &types::adr().okf_type),
             manifest("b", "BigQuery Table"),
         ] {
             let column = manifest.frontmatter.display_type_slug();

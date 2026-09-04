@@ -1,5 +1,6 @@
 ---
 name: use-arkouda
+version: 0.6.0
 description: Find prior decisions and product requirements, and record new ones, in a repo's arkouda collection of ADRs (Architecture Decision Records) and PRDs (Product Requirements Documents). Invoke any time you're about to make a non-trivial design, architecture, library, schema, or convention decision, or about to build a feature — check what was already decided and what is already required before deciding, and capture the outcome afterwards.
 license: MIT
 ---
@@ -12,7 +13,7 @@ An arkouda directory is an [Open Knowledge Format](https://github.com/GoogleClou
 
 If a repo has no such directory yet but the `arkouda` binary is installed, this skill is also the right one to reach for: `arkouda new` enforces the schema from the first file.
 
-## Two concept types
+## Concept types
 
 Arkouda has two built-in types, and picking the wrong one produces a document that fails `arkouda check`.
 
@@ -28,6 +29,24 @@ Arkouda has two built-in types, and picking the wrong one produces a document th
 The two are linked from the PRD side: a PRD's `decisions` frontmatter key lists the concept ids of the ADRs that shaped it. Traverse from a requirement to its rationale by reading that key — never by restating the decision inside the PRD.
 
 **Apart from `Status`, the two share no section headings.** A PRD has no `## Context`; its motivation is `## Problem`. Asking for a section the concept's type doesn't have is an error, not a near-miss. If you don't know which type a concept is, run `arkouda list -l` and read the type column, or just omit the section name and let arkouda pick the primary one.
+
+### The project may define more
+
+**A project can declare its own types with `[[types]]` in `.arkoudarc.toml`, and it can replace the built-in ADR or PRD contract with its own.** So the two tables above describe arkouda's defaults, not necessarily *this* repo. Before you scaffold anything in an unfamiliar repo:
+
+```sh
+arkouda --help     # nothing about types here — the type set is per project
+arkouda list -l    # the type column shows which types are actually in use
+
+# `.arkoudarc.toml` is discovered by walking *up* from the working directory,
+# so reading only `./.arkoudarc.toml` misses the config from a nested dir.
+d=$PWD; until [ -f "$d/.arkoudarc.toml" ] || [ "$d" = / ]; do d=$(dirname "$d"); done
+cat "$d/.arkoudarc.toml" 2>/dev/null   # the authoritative list of this repo's types
+```
+
+A `[[types]]` table gives its type a `slug` (what `--type` takes), an `okf_type` (what its documents declare), a status lifecycle, optionally `required_sections` and a `primary_section`, a `default_dir`, and optionally a `template`. Read the table and follow it exactly as you would the built-in contracts — `arkouda new --type <slug>` scaffolds from it, and `arkouda check` enforces it.
+
+`arkouda new --type <slug>` with an unknown slug lists the slugs that do exist, so that error is the fastest way to see this repo's types if there is no config file to read.
 
 ## When to use
 
@@ -72,8 +91,8 @@ Resolution order, in case you need to set or override the location:
    adr = ["docs/adr"]
    prd = ["docs/prd"]
    ```
-   Relative paths resolve against the config file's directory. `arkouda list`, `check`, `section`, and `index` work over the union of every root — type comes from frontmatter, not from the directory — while `arkouda new` writes into the first root configured for the type it is creating.
-4. Default: `docs/adr/` for ADRs, `docs/prd/` for PRDs.
+   Relative paths resolve against the config file's directory. `arkouda list`, `check`, `section`, and `index` work over the union of every root — type comes from frontmatter, not from the directory — while `arkouda new` writes into the first root configured for the type it is creating. A `[dirs]` key must name a type the project has: a built-in, or one of its own `[[types]]`.
+4. Default: each type's own `default_dir` — `docs/adr/` for ADRs, `docs/prd/` for PRDs.
 
 A concept id is the document's path *within its bundle*, minus the `.md` suffix — not just the filename. A top-level `use-postgres.md` has the id `use-postgres`; a nested `security/mtls.md` has the id `security/mtls`. `arkouda section` accepts the full concept id (`security/mtls`), the bare stem (`mtls`), or the filename.
 
@@ -81,10 +100,10 @@ A concept id is the document's path *within its bundle*, minus the `.md` suffix 
 
 Five subcommands, each doing something the shell can't:
 
-- **`arkouda list [--sort id|timestamp|status] [--type adr|prd] [-l]`** — one path per line. Pipe straight into `xargs`/`rg`/`cat`/`wc`. With `-l`, a headerless `ID TYPE STATUS TIMESTAMP PATH TITLE — DESCRIPTION` table for human skimming and for `awk`. `--type` filters by frontmatter type.
+- **`arkouda list [--sort id|timestamp|status] [--type <slug>] [-l]`** — one path per line. Pipe straight into `xargs`/`rg`/`cat`/`wc`. With `-l`, a headerless `ID TYPE STATUS TIMESTAMP PATH TITLE — DESCRIPTION` table for human skimming and for `awk`. `--type` filters by frontmatter type; valid slugs are this project's, not a fixed `adr|prd`.
 - **`arkouda section <id> [<name>]`** — body of that concept's primary section (`Decision` for an ADR, `Requirements` for a PRD). Give a `<name>` for any other heading (`context`, `consequences`, `problem`, `non-goals`, `success metrics`, `status`, or custom). Errors if the section is missing. For the full file, resolve the path through `arkouda list` and `cat` it.
-- **`arkouda check`** — validates OKF conformance, frontmatter, concept ids, and each concept's required Markdown sections *for the type it declares*. Exit 0 clean, 1 on any error. Each diagnostic carries a code (E000–E015) and a fix hint. Warnings never fail the run.
-- **`arkouda new "<title>" [--type adr|prd] [--id <slug>] [--status <value>] [--description "<one-line summary>"]`** — scaffold a new concept with today's date, from that type's template. Defaults to `--type adr`. `--status` must come from the chosen type's vocabulary and defaults to the first of its lifecycle (`proposed` for an ADR, `draft` for a PRD). Default id is a slug from the title. The description should summarize *what was decided* or *what is being built*, not just the topic. Refreshes `index.md` if the bundle has one.
+- **`arkouda check`** — validates in three tiers: OKF conformance for every concept, arkouda's frontmatter profile for concepts whose `type` the project configures, and that type's status vocabulary and required sections. Exit 0 clean, 1 on any error. Each diagnostic carries a code (E000–E015) and a fix hint. Warnings never fail the run. A concept whose `type` no `[[types]]` table configures is checked for OKF conformance only and warned about (`E005`) — it is neither skipped nor a failure.
+- **`arkouda new "<title>" [--type <slug>] [--id <slug>] [--status <value>] [--description "<one-line summary>"]`** — scaffold a new concept with today's date, from that type's template. Defaults to `--type adr`. That default keeps working when a project redefines the `adr` slug — you get its contract instead of the built-in one — and fails only when the project has no `adr` slug at all, in which case the error names the slugs it does have. `--status` must come from the chosen type's vocabulary and defaults to the first of its lifecycle (`proposed` for an ADR, `draft` for a PRD). Default id is a slug from the title. The description should summarize *what was decided* or *what is being built*, not just the topic. Refreshes `index.md` if the bundle has one.
 - **`arkouda index`** — regenerate each bundle's `index.md`, an OKF §6 listing of every concept under `# <Type>` then `## <Status>`. Read it to see the whole collection at a glance without opening any file.
 
 Global flags: `--dir <path>` (also `ADR_DIR`), `-q/--quiet`. Run `arkouda --help` or `arkouda <subcommand> --help` for the authoritative surface.
@@ -287,10 +306,10 @@ Each diagnostic has a code; the hint usually tells you the exact fix.
 - **E001/E002** missing or empty required field → add the field with a real value.
 - **E003** invalid status → use a value from *this type's* vocabulary; the hint lists them.
 - **E004** concept id is not a lowercase slug → rename the file (and any parent dirs) to letters, digits, single hyphens.
-- **E005** unknown `type` → set `type: Architecture Decision Record` or `type: Product Requirements Document`. Arkouda does not silently skip a concept whose type it can't check.
+- **E005** *(warning)* no configured type declares this `type` → either the value is a typo (fix it to a configured `okf_type`; the hint lists them), or the project has not declared this type yet. Until it does, the concept is checked for OKF conformance only — its status and sections are not validated. A warning rather than an error because a conformant OKF bundle may legitimately hold types this project has not described.
 - **E006** invalid timestamp → ISO 8601, e.g. `2026-05-06` or `2026-05-06T14:30:00Z`.
 - **E007/E008** missing or wrong H1 → first heading must be `# <title>`.
-- **E009** missing required section → add the named `## Section`. Which ones are required depends on `type`.
+- **E009** missing required section → add the named `## Section`. Which ones are required depends on `type`, and a project's own type may require none at all.
 - **E010** duplicate concept id across files → make ids unique.
 - **E011** `index.md` frontmatter → only a bundle-root index may have it, and only `okf_version`.
 - **E012** `log.md` heading is not `## YYYY-MM-DD`.
@@ -305,9 +324,10 @@ Each diagnostic has a code; the hint usually tells you the exact fix.
 - Don't reach for the default `--type adr` when you're describing what to build; that's a PRD. And don't file a technical trade-off as a PRD.
 - Don't ask a PRD for its `## Context` or an ADR for its `## Requirements` — apart from `Status`, the section vocabularies don't overlap. Omit the section name to get the right one for the type.
 - Don't restate a decision inside a PRD. Link it with the `decisions` frontmatter key and let the ADR carry the reasoning.
-- Don't write or edit these files freehand without running `arkouda check` afterwards — the schema is strict.
+- Don't write or edit these files freehand without running `arkouda check` afterwards — the schema is strict for every type the project configures.
 - Don't invent statuses. Each type has its own closed list, and `shipped` on an ADR (or `accepted` on a PRD) is an `E003`.
 - Don't move or rename a published document after creation — its path within the bundle *is* its concept id, so links, `superseded_by`, and `decisions` values pointing at it will break. Create a new one and mark the old one `superseded` instead.
 - Don't add an `id:` key to frontmatter; it was removed when arkouda moved to OKF. The concept id comes from the path within the bundle.
 - Don't hand-edit `index.md` — it is generated by `arkouda index`, and edits are overwritten. `log.md` is yours to maintain: arkouda never writes it, only validates that its headings are `## YYYY-MM-DD`. Neither file is ever a concept; both are reserved by OKF.
-- Don't commit documents whose `arkouda check` fails — CI is likely to enforce it.
+- Don't commit documents whose `arkouda check` fails — CI is likely to enforce it. Do read the warnings too: an `E005` on a document you just wrote means you gave it a `type` this project doesn't configure, and nothing checked its shape.
+- Don't assume `--type adr` means the built-in ADR, or that it exists at all. A project can redefine the `adr` slug with its own sections and statuses, or drop it by giving decisions a different slug. Read the discovered `.arkoudarc.toml`, or let `arkouda new --type <anything>` list the slugs in its error.

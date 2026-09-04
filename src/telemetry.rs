@@ -6,6 +6,8 @@
 //! `telemetry-for-agent-command-invocations` for the full rationale.
 
 use crate::cli::{Cli, Command, SelfCommand};
+use crate::commands::Outcome;
+use crate::concept::types::Origin;
 use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use std::fs::{File, OpenOptions};
@@ -50,11 +52,22 @@ pub struct Event {
     pub agent_source: Option<String>,
     /// Whether stdout is a TTY at invocation time.
     pub tty: bool,
+    /// Diagnostic codes this invocation produced, sorted and deduplicated.
+    /// Omitted when there are none, so the field costs nothing on the commands
+    /// that never validate.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub codes: Vec<String>,
+    /// Whether the concept type this invocation resolved is built in or
+    /// declared by the project. The slug itself is project-specific free text
+    /// and is deliberately not recorded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub type_kind: Option<&'static str>,
 }
 
 impl Event {
-    /// Build an event from a parsed CLI, raw argv, exit code, and elapsed time.
-    pub fn capture(cli: &Cli, raw_argv: &[String], exit_code: i32, elapsed: Duration) -> Self {
+    /// Build an event from a parsed CLI, raw argv, what the command did, and
+    /// elapsed time.
+    pub fn capture(cli: &Cli, raw_argv: &[String], outcome: &Outcome, elapsed: Duration) -> Self {
         let command = cli.command.name();
         let (agent, agent_source) = detect_agent();
         Self {
@@ -62,11 +75,13 @@ impl Event {
             version: env!("CARGO_PKG_VERSION"),
             command: Some(command),
             args: redact_args(raw_argv, Some(command)),
-            exit_code,
+            exit_code: outcome.exit,
             duration_ms: elapsed.as_millis(),
             agent,
             agent_source,
             tty: std::io::stdout().is_terminal(),
+            codes: outcome.codes.iter().map(|code| code.to_string()).collect(),
+            type_kind: outcome.type_kind.map(Origin::name),
         }
     }
 }
@@ -225,20 +240,45 @@ fn state_dir() -> Option<PathBuf> {
     }
 }
 
+/// The one flag whose value may be a project's own vocabulary rather than
+/// arkouda's.
+const TYPE_FLAG: &str = "--type";
+
 /// Redact argv tokens so values that look like paths or free-text titles
 /// become opaque markers. Flag names and short slug/enum values pass
 /// through unchanged.
 pub(crate) fn redact_args(raw_args: &[String], command_name: Option<&str>) -> Vec<String> {
     let mut out = Vec::with_capacity(raw_args.len());
     let mut subcmd_skipped = command_name.is_none();
+    let mut after_type_flag = false;
+
     for token in raw_args {
         if !subcmd_skipped && Some(token.as_str()) == command_name {
             subcmd_skipped = true;
             continue;
         }
-        out.push(redact_token(token));
+        out.push(if after_type_flag {
+            redact_type_value(token)
+        } else {
+            redact_token(token)
+        });
+        after_type_flag = token == TYPE_FLAG;
     }
     out
+}
+
+/// A `--type` value, kept only when it names a built-in.
+///
+/// `adr` and `prd` are arkouda's own vocabulary, and recording which one an
+/// agent reached for is the whole point of keeping argv. A project's declared
+/// slug is free text it chose — as identifying as a title — so it becomes a
+/// marker. The marker still says the type was a custom one, which is the part
+/// worth knowing.
+fn redact_type_value(value: &str) -> String {
+    match crate::concept::types::by_slug(value) {
+        Some(concept_type) if concept_type.origin == Origin::Builtin => value.to_owned(),
+        _ => "<type>".to_owned(),
+    }
 }
 
 pub(crate) fn redact_token(token: &str) -> String {
@@ -248,6 +288,9 @@ pub(crate) fn redact_token(token: &str) -> String {
     if token.starts_with('-')
         && let Some((flag, value)) = token.split_once('=')
     {
+        if flag == TYPE_FLAG {
+            return format!("{flag}={}", redact_type_value(value));
+        }
         return format!("{flag}={}", redact_value(value));
     }
     if token.starts_with('-') {
@@ -297,6 +340,29 @@ impl Command {
 mod tests {
     use super::*;
     use clap::Parser;
+
+    #[test]
+    fn a_projects_own_type_slug_is_redacted() {
+        // `adr` and `prd` are arkouda's vocabulary and are the point of
+        // recording argv. `rfc` is whatever this project called its own type,
+        // which is free text like a title.
+        let redact = |args: &[&str]| {
+            redact_args(
+                &args.iter().map(|a| (*a).to_owned()).collect::<Vec<_>>(),
+                Some("new"),
+            )
+        };
+
+        assert_eq!(redact(&["new", "--type", "adr"]), ["--type", "adr"]);
+        assert_eq!(redact(&["new", "--type", "rfc"]), ["--type", "<type>"]);
+        assert_eq!(redact(&["new", "--type=rfc"]), ["--type=<type>"]);
+        assert_eq!(redact(&["new", "--type=prd"]), ["--type=prd"]);
+        assert_eq!(
+            redact(&["new", "--status", "draft"]),
+            ["--status", "draft"],
+            "only --type carries a project's own vocabulary"
+        );
+    }
 
     fn command_of(argv: &[&str]) -> Command {
         Cli::parse_from(argv).command
@@ -402,6 +468,8 @@ mod tests {
             agent: Some("claude-code"),
             agent_source: Some("env:CLAUDECODE".to_owned()),
             tty: false,
+            codes: Vec::new(),
+            type_kind: None,
         };
         let json: serde_json::Value =
             serde_json::from_slice(&serde_json::to_vec(&event).unwrap()).unwrap();
@@ -449,6 +517,8 @@ mod tests {
             agent: None,
             agent_source: None,
             tty: false,
+            codes: Vec::new(),
+            type_kind: None,
         };
 
         // Quiet first call: writes event, suppresses notice and sentinel.

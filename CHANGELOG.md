@@ -5,9 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-09-04
 
 ### Added
+
+- **User-defined concept types.** A project declares its own with `[[types]]` tables in `.arkoudarc.toml`, and a declared type gets everything the built-ins get: `--type`, a template, a status lifecycle, `index.md` grouping, and an `arkouda check` contract.
+  ```toml
+  [[types]]
+  slug = "rfc"
+  okf_type = "Request for Comments"
+  statuses = ["draft", "active", "withdrawn"]
+  required_sections = ["Status", "Summary", "Motivation"]   # optional
+  primary_section = "Summary"                               # optional
+  default_dir = "docs/rfc"
+  template = "docs/templates/rfc.md"                        # optional
+  extensions = ["sponsors"]                                 # optional
+  ```
+  `slug`, `okf_type`, `statuses`, and `default_dir` are required; status labels are derived from their names (`in-review` → `In Review`). `required_sections` is optional, so a type may take a lifecycle and a template without a body contract — nothing for `check` to fail on. `template` points at a Markdown file whose `##` headings and prose become the scaffold; it may exceed `required_sections` but not fall short of them. A declared type whose `slug` or `okf_type` matches a built-in replaces it wholesale, which is how a project changes ADR's own sections or statuses. Config mistakes — a slug `--type` could not take, an empty lifecycle, a `primary_section` outside `required_sections`, a template short of a required section, two tables claiming one slug, a misspelled key — are reported when the config loads. See [`docs/adr/support-user-defined-concept-types.md`](docs/adr/support-user-defined-concept-types.md).
+- **`arkouda check` validates in three tiers.** OKF conformance (`E000`, `E004`, `E007`, `E010`, `E011`, `E012`) for every concept; arkouda's frontmatter profile (`E001`, `E002`, `E006`, `E008`) for concepts whose `type` resolves to a configured type; and that type's contract (`E003`, `E009`) for its vocabulary and sections. No codes are added or renumbered — the change is which tier each belongs to. The tiers are what let arkouda be strict about the format it implements and permissive about the contracts a project has chosen not to write down.
+- The `use-arkouda` skill declares `version: 0.6.0` in its frontmatter, tracking the arkouda release whose CLI surface it documents. The skill's contract changed materially this release: an agent must now read the discovered `.arkoudarc.toml` before scaffolding, because `--type adr` is no longer guaranteed to exist or to mean the built-in ADR.
+- Telemetry events gain two fields, both omitted when empty: `codes`, the sorted diagnostic codes a `check` produced, and `type_kind`, whether a resolved `--type` was `builtin` or `custom`. The type's slug is project-specific free text and is deliberately not recorded — a `--type` value in the recorded argv is kept only when it names a built-in, and becomes `<type>` otherwise. An exit code alone cannot say which rules fire, which is the evidence a future change to the tiers or to a built-in contract has to be made on.
 
 - **Product Requirements Documents as a second built-in concept type.** Arkouda is now a concept-type-aware OKF tool rather than an ADR-only one: a `ConceptType` descriptor carries each type's OKF `type` string, status vocabulary, required sections, primary section, default directory, and template, and the two built-in types are Architecture Decision Record and Product Requirements Document. A PRD's required sections are `Status`, `Problem`, `Requirements`, `Non-Goals`, and `Success Metrics`; `Approach` and `Open Questions` are scaffolded but not validated. Its statuses are `draft`, `in-review`, `approved`, `shipped`, `abandoned`, `superseded`, and its default directory is `docs/prd`. Types are not user-definable. See [`docs/adr/support-product-requirements-documents.md`](docs/adr/support-product-requirements-documents.md).
 - `arkouda new --type adr|prd` (defaults to `adr`) selects the template, the `type` string, the status vocabulary, and the target directory.
@@ -24,11 +41,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING.** **`E005` is now a warning.** A concept whose `type` no configured type declares is validated for OKF conformance, reported, and left to pass, where it used to fail the run. It is not skipped: its concept id, heading, and bundle placement are still checked, and it still appears in `list` and `index`. This reverses the position taken in [`support-product-requirements-documents`](docs/adr/support-product-requirements-documents.md), which was sound under a closed registry of two types and unsound under an open one — an unrecognized `type` is now ordinarily one the operator has not declared, and failing on it made `arkouda check` reject conformant OKF bundles. Deleting a `[[types]]` table therefore degrades its documents rather than breaking a build. A CI run that was red because of an unknown type goes green; nothing that was green turns red.
+- **BREAKING.** `--type` is no longer a clap enum on `list` and `new`. Which slugs are valid depends on a `.arkoudarc.toml` that has not been read when argv is parsed, so the value is resolved after the config loads and an unresolvable one names the slugs that are configured. `list --type <unknown>` used to silently list everything and now errors. Shell completions offer nothing for `--type`, as they already do not for `--status`.
+- `arkouda section <id>` with no section name errors when the concept's type names no `primary_section`, alongside the existing error for a type arkouda does not know.
 - **BREAKING.** `arkouda decision <id> [--section <name>]` is now `arkouda section <id> [<name>]`, with the section name as an optional positional and **no `decision` alias**. With no name it prints the concept type's primary section — `## Decision` for an ADR, `## Requirements` for a PRD. A command that announces its output as a decision invites a requirements section to be recorded as one, and arkouda's primary consumer is an agent. This revises the naming half of [`ls-style-list-and-decision`](docs/adr/ls-style-list-and-decision.md); its list decision stands.
 - **BREAKING.** `arkouda list -l` gains a type column: the table is now `ID TYPE STATUS TIMESTAMP PATH TITLE — DESCRIPTION`. `awk '$2=="accepted"'` becomes `$3`, and `{print $4}` becomes `{print $5}`. The type is the one fact about a mixed collection that nothing else reveals — it cannot be inferred from the path — and `list -l` is the first command run in an unfamiliar repo. `arkouda list` without `-l`, the actual pipeline surface, is untouched.
 - **BREAKING.** Every `index.md` regenerates with a new heading structure: `# <Type>` at H1 and `## <Status>` at H2, where before status was the H1. Nesting is uniform, so a single-type bundle pays one extra heading level and consumers parse one shape instead of two. Existing bundles report `E014` (stale index, a warning) until `arkouda index` is run; no concept document needs editing.
 - **BREAKING.** `arkouda new --status` is no longer a clap `ValueEnum`, because which values are valid now depends on `--type`. It is validated against the resolved type's vocabulary and defaults to the first of its lifecycle (`proposed` for an ADR, `draft` for a PRD). Shell completions offer nothing for it until they learn to be type-aware.
 - `E005`, `E003`, and `E009` are now type-relative: `E005` fires when `type` is not one of the types arkouda knows (rather than when it is not `Architecture Decision Record`), `E003` checks `status` against *that type's* vocabulary, and `E009` checks *that type's* required sections. A concept whose `type` arkouda does not know is an `E005` error rather than a skipped file, and its sections are not checked against another type's contract.
+- **Behaviour change on upgrade.** A concept whose required headings exist only inside a code fence validated before and now fails with `E009`. That is the fix working as intended, but it can turn a passing CI run red without the document having changed.
 - The `adr` module is now `concept`, and `AdrStatus` and `ADR_TYPE` are gone, replaced by the per-type descriptor. The `ADR_DIR` environment variable keeps its name for compatibility.
 - `arkouda check` counts "concept(s)" rather than "ADR(s)", and the error text for a missing collection, an ambiguous lookup, and an existing file says "concept" rather than "ADR".
 
@@ -37,10 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Markdown structure is determined by parsing the document rather than scanning lines for a `## ` prefix, fixing two defects. A heading inside a fenced or indented code block counted as a real heading, so an ADR whose only `## Decision` and `## Consequences` headings sat inside a fenced template passed `arkouda check` while missing both sections. And `arkouda decision` truncated its output at the first heading inside a fence. Setext headings (`Title` over `=====`) are now recognized. See [`docs/adr/parse-markdown-instead-of-scanning-lines.md`](docs/adr/parse-markdown-instead-of-scanning-lines.md).
 - Only document-level headings count as sections. A heading nested in a block quote or list item (`> ## Decision`) belongs to that container, so quoting a template no longer satisfies the requirement to have written one.
 - `arkouda decision` ends a section at the next heading of the same or higher level rather than at the next `##`, so an intervening `#` no longer lands in the preceding section's body and a nested `###` subsection is no longer excluded from it.
-
-### Changed
-
-- **Behaviour change on upgrade.** A concept whose required headings exist only inside a code fence validated before and now fails with `E009`. That is the fix working as intended, but it can turn a passing CI run red without the document having changed.
 
 ## [0.5.0] - 2026-07-14
 
@@ -135,6 +152,7 @@ Initial release.
 - Dual MIT/Apache-2.0 license.
 - Agent skills: `skills/arkouda` (how to use the CLI) and `skills/prepare-release` (how to cut a release).
 
+[0.6.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.6.0
 [0.5.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.5.0
 [0.4.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.4.0
 [0.3.0]: https://github.com/manuelmauro/arkouda/releases/tag/v0.3.0

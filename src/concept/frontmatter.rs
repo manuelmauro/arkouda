@@ -83,9 +83,8 @@ impl Frontmatter {
     pub fn display_type_slug(&self) -> &str {
         match self.concept_type.as_deref().map(str::trim) {
             None | Some("") => "<missing>",
-            Some(declared) => {
-                types::by_okf_type(declared).map_or("<unknown>", |concept_type| concept_type.slug)
-            }
+            Some(declared) => types::by_okf_type(declared)
+                .map_or("<unknown>", |concept_type| concept_type.slug.as_str()),
         }
     }
 
@@ -146,7 +145,10 @@ mod tests {
     #[test]
     fn resolves_the_declared_type() {
         let frontmatter = parse("type: Product Requirements Document\n");
-        assert_eq!(frontmatter.resolved_type(), Some(&types::PRD));
+        assert_eq!(
+            frontmatter.resolved_type().map(|t| t.slug.as_str()),
+            Some("prd")
+        );
         assert_eq!(frontmatter.display_type_slug(), "prd");
     }
 

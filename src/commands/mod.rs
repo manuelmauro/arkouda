@@ -1,7 +1,8 @@
 //! CLI command implementations.
 
 use crate::cli::Cli;
-use crate::concept::types::ConceptType;
+use crate::concept::DiagnosticCode;
+use crate::concept::types::{self, ConceptType, Origin};
 use crate::concept::{Manifest, discovery};
 use crate::config::{self, Dirs};
 use crate::error::{ArkoudaError, Result};
@@ -37,6 +38,43 @@ pub(crate) struct DiscoveredBundle {
     pub paths: Vec<PathBuf>,
     /// Whether `paths` covers the whole bundle. See [`Bundle::complete`].
     pub complete: bool,
+}
+
+/// What a command did, beyond its exit code.
+///
+/// Carries the two facts telemetry records that an exit code cannot: which
+/// diagnostics a `check` produced, and whether a resolved `--type` was built
+/// in or declared by the project. Commands that have neither convert from
+/// their exit code.
+pub struct Outcome {
+    /// Process exit code: 0 success, 1 failure.
+    pub exit: i32,
+    /// Diagnostic codes produced, sorted and deduplicated.
+    pub codes: Vec<DiagnosticCode>,
+    /// Origin of the type this invocation resolved, when it resolved one.
+    pub type_kind: Option<Origin>,
+}
+
+impl From<i32> for Outcome {
+    fn from(exit: i32) -> Self {
+        Self {
+            exit,
+            codes: Vec::new(),
+            type_kind: None,
+        }
+    }
+}
+
+/// Resolve a `--type` slug against the configured registry.
+///
+/// `--type` is a free string rather than a clap `PossibleValuesParser`,
+/// because which slugs are valid depends on a `.arkoudarc.toml` that has not
+/// been read when clap parses argv.
+pub(crate) fn resolve_type(slug: &str) -> Result<&'static ConceptType> {
+    types::by_slug(slug).ok_or_else(|| ArkoudaError::UnknownType {
+        slug: slug.to_owned(),
+        known: types::slugs().join(", "),
+    })
 }
 
 /// Resolve the effective bundle roots for this invocation: CLI flag wins,

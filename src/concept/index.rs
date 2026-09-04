@@ -36,9 +36,9 @@ pub fn render(manifests: &[Manifest]) -> String {
 /// Partition concepts under their type heading, in registry order, with
 /// unrecognized and missing types last. Empty groups are dropped.
 fn by_type(manifests: &[Manifest]) -> Vec<(&str, Vec<&Manifest>)> {
-    let headings = types::ALL
+    let headings = types::all()
         .iter()
-        .map(|concept_type| concept_type.okf_type)
+        .map(|concept_type| concept_type.okf_type.as_str())
         .chain(std::iter::once(OTHER_HEADING));
 
     let mut groups: Vec<(&str, Vec<&Manifest>)> =
@@ -47,7 +47,7 @@ fn by_type(manifests: &[Manifest]) -> Vec<(&str, Vec<&Manifest>)> {
     for manifest in manifests {
         let heading = manifest
             .concept_type()
-            .map_or(OTHER_HEADING, |concept_type| concept_type.okf_type);
+            .map_or(OTHER_HEADING, |concept_type| concept_type.okf_type.as_str());
         let group = groups
             .iter_mut()
             .find(|(name, _)| *name == heading)
@@ -71,8 +71,8 @@ fn by_status<'a>(
     let descriptor: Option<&'static ConceptType> = types::by_okf_type(concept_type);
     let labels = descriptor
         .into_iter()
-        .flat_map(|descriptor| descriptor.statuses)
-        .map(|status| status.label);
+        .flat_map(|descriptor| descriptor.statuses.iter())
+        .map(|status| status.label.as_str());
 
     let mut groups: Vec<(&'static str, Vec<&Manifest>)> = labels
         .chain(std::iter::once(OTHER_HEADING))
@@ -84,7 +84,7 @@ fn by_status<'a>(
             .and_then(|descriptor| {
                 descriptor.status(manifest.frontmatter.status.as_deref().unwrap_or_default())
             })
-            .map_or(OTHER_HEADING, |status| status.label);
+            .map_or(OTHER_HEADING, |status| status.label.as_str());
 
         let group = groups
             .iter_mut()
@@ -153,11 +153,11 @@ mod tests {
     }
 
     fn adr(id: &str, title: &str, status: &str, description: Option<&str>) -> Manifest {
-        concept(id, types::ADR.okf_type, title, status, description)
+        concept(id, &types::adr().okf_type, title, status, description)
     }
 
     fn prd(id: &str, title: &str, status: &str, description: Option<&str>) -> Manifest {
-        concept(id, types::PRD.okf_type, title, status, description)
+        concept(id, &types::prd().okf_type, title, status, description)
     }
 
     #[test]

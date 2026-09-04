@@ -6,26 +6,37 @@
 //! Arkouda parses the Markdown instead.
 
 use crate::cli::{Cli, SectionArgs};
+use crate::commands::Outcome;
 use crate::error::{ArkoudaError, Result};
 
 /// Run the section command.
-pub fn run(args: &SectionArgs, cli: &Cli) -> Result<i32> {
+pub fn run(args: &SectionArgs, cli: &Cli) -> Result<Outcome> {
     let dirs = super::search_dirs(cli)?;
     let manifests = super::load_manifests(&dirs)?;
     let manifest = super::resolve_one(&manifests, &args.id)?;
 
     // With no name, the concept's own type says which section carries its
-    // substance: `Decision` for an ADR, `Requirements` for a PRD.
+    // substance: `Decision` for an ADR, `Requirements` for a PRD. A type that
+    // names no primary section has no default to fall back on, and neither
+    // does a type arkouda does not know.
     let name = match args.name.as_deref() {
         Some(name) => name.to_owned(),
-        None => manifest
-            .concept_type()
-            .ok_or_else(|| ArkoudaError::UnknownConceptType {
-                id: manifest.concept_id.clone(),
-                concept_type: manifest.frontmatter.display_type().to_owned(),
-            })?
-            .primary_section
-            .to_owned(),
+        None => {
+            let concept_type =
+                manifest
+                    .concept_type()
+                    .ok_or_else(|| ArkoudaError::UnknownConceptType {
+                        id: manifest.concept_id.clone(),
+                        concept_type: manifest.frontmatter.display_type().to_owned(),
+                    })?;
+            concept_type
+                .primary_section
+                .clone()
+                .ok_or_else(|| ArkoudaError::NoPrimarySection {
+                    id: manifest.concept_id.clone(),
+                    slug: concept_type.slug.clone(),
+                })?
+        }
     };
 
     let body = manifest
@@ -36,5 +47,13 @@ pub fn run(args: &SectionArgs, cli: &Cli) -> Result<i32> {
         })?;
     println!("{body}");
 
-    Ok(0)
+    // The concept's own type is what picked the section, so it is the type
+    // this invocation resolved.
+    Ok(Outcome {
+        exit: 0,
+        codes: Vec::new(),
+        type_kind: manifest
+            .concept_type()
+            .map(|concept_type| concept_type.origin),
+    })
 }
