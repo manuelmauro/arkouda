@@ -139,6 +139,24 @@ directly in the parent. It is a real break and it is not detectable
 automatically, which is why it is written down here rather than only in a
 changelog.
 
+**A directory whose only Markdown is malformed is not a bundle**, so nothing
+reports it. The walk asks whether a file declares a `type`, and a document with
+no frontmatter at all does not — so it makes no bundle, is never loaded, and
+earns no `E000`. `check` says `No concepts found` and exits 0. The same file
+beside one valid concept is reported normally, because the valid one is what
+makes the directory a bundle.
+
+This was found by the conformance corpus rather than reasoned out, and it is the
+one consequence here that is a genuine loss of coverage: under `dirs` the
+directory was named, so anything in it was loaded and any breakage was reported.
+It is accepted because the alternative is worse. Treating *any* Markdown file as
+a bundle-maker would make every `README.md` a bundle root and every repository
+one enormous bundle; treating a file with unparseable frontmatter as a concept
+would need the walk to distinguish "meant to be a concept" from "is prose",
+which is exactly the guess a `type` key exists to remove. The realistic shape —
+a malformed document among valid ones — reports correctly, and the unrealistic
+one is silent.
+
 **A concept at the repository root makes the repository one bundle**, and every
 id gains its directory prefix. That is the rule working as stated rather than an
 edge case to patch: a file at the top level says the top level is where the
